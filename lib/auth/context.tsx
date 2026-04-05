@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { createClient } from "@/lib/supabase/client";
-import { hasFullAuthConfig } from "@/lib/config";
+import { hasClerkPublishableKey, hasSupabaseBrowserEnv } from "@/lib/config";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -53,7 +53,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  if (!hasFullAuthConfig) {
+  if (!hasClerkPublishableKey) {
     return <FallbackAuthProvider>{children}</FallbackAuthProvider>;
   }
 
@@ -64,8 +64,12 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoaded: isClerkLoaded, isSignedIn } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(hasSupabaseBrowserEnv);
   const [{ supabase, supabaseError }] = useState(() => {
+    if (!hasSupabaseBrowserEnv) {
+      return { supabase: null, supabaseError: null as string | null };
+    }
+
     try {
       return { supabase: createClient(), supabaseError: null as string | null };
     } catch (error) {
@@ -104,16 +108,26 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {
+      if (!supabase) {
+        setProfile(null);
+        return;
+      }
       const profileData = await fetchProfile(user.id);
       setProfile(profileData);
     }
-  }, [user?.id, fetchProfile]);
+  }, [user?.id, fetchProfile, supabase]);
 
   useEffect(() => {
     if (!isClerkLoaded) return;
 
     const loadProfile = async () => {
-      setProfileLoading(true);
+      setProfileLoading(hasSupabaseBrowserEnv);
+
+      if (!hasSupabaseBrowserEnv) {
+        setProfile(null);
+        return;
+      }
+
       if (isSignedIn && user?.id) {
         const profileData = await fetchProfile(user.id);
         setProfile(profileData);
@@ -127,7 +141,7 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   }, [isClerkLoaded, isSignedIn, user?.id, fetchProfile]);
 
   useEffect(() => {
-    if (!isSignedIn || !user?.id) return;
+    if (!isSignedIn || !user?.id || !hasSupabaseBrowserEnv) return;
 
     const updateStatus = async () => {
       try {
