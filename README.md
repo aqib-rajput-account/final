@@ -53,3 +53,4 @@ The webhook handler is implemented in `app/api/webhooks/clerk/route.ts`.
   - Your app is using the correct Clerk environment keys for that deployment.
   - Your deployment URL is added in Clerk allowed origins/redirects.
 - If social sign-in is needed, enable that provider in Clerk Dashboard before adding social buttons in UI.
+- If sign-up says your password was found in a data breach, either use a new unique password or leave password empty to continue with email-code verification.

@@ -45,11 +45,11 @@ export default function SignUpPage() {
                     <CardHeader className="space-y-1 pb-4">
                       <CardTitle className="text-xl">Sign up</CardTitle>
                       <CardDescription>
-                        Choose your preferred sign up method
+                        Create your account with email code, with an optional password
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {/* Email and Password Fields */}
+                      {/* Email and optional password fields */}
                       <Clerk.Field name="emailAddress" className="space-y-2">
                         <Clerk.Label asChild>
                           <Label>Email address</Label>
@@ -62,11 +62,14 @@ export default function SignUpPage() {
 
                       <Clerk.Field name="password" className="space-y-2">
                         <Clerk.Label asChild>
-                          <Label>Password</Label>
+                          <Label>Password (optional)</Label>
                         </Clerk.Label>
-                        <Clerk.Input type="password" required asChild>
-                          <Input placeholder="Create a strong password" />
+                        <Clerk.Input type="password" asChild>
+                          <Input placeholder="Leave blank to use email code only" />
                         </Clerk.Input>
+                        <p className="text-xs text-muted-foreground">
+                          If you add a password, it must meet Clerk security checks (including breach detection).
+                        </p>
                         <Clerk.FieldError className="text-sm text-destructive" />
                       </Clerk.Field>
 
