@@ -47,6 +47,11 @@ Use Clerk webhooks to sync new users into your `profiles` table:
 
 The webhook handler is implemented in `app/api/webhooks/clerk/route.ts`.
 
+Additionally, the app now performs a signed-in profile sync on demand through:
+- `POST /api/auth/sync-profile`
+
+This ensures Clerk users are upserted into Supabase `profiles` even if webhook delivery is delayed.
+
 ## Troubleshooting
 
 - If you see browser CORS errors redirecting to `*.accounts.dev`, verify:
