@@ -23,6 +23,8 @@ This is a Connect Mosque Project of our Community.
 3. **Set Clerk URLs in Dashboard**
    - Sign-in URL: `/sign-in`
    - Sign-up URL: `/sign-up`
+   - Allowed origins / redirect URLs: add your deployed domain (for example `https://your-app.vercel.app`)
+   - Use production Clerk keys for production deployments (avoid `pk_test_*` on live domains)
 
 4. **Run the app**
    ```bash
@@ -44,3 +46,10 @@ Use Clerk webhooks to sync new users into your `profiles` table:
 - Events: `user.created`, `user.updated`, `user.deleted`
 
 The webhook handler is implemented in `app/api/webhooks/clerk/route.ts`.
+
+## Troubleshooting
+
+- If you see browser CORS errors redirecting to `*.accounts.dev`, verify:
+  - Your app is using the correct Clerk environment keys for that deployment.
+  - Your deployment URL is added in Clerk allowed origins/redirects.
+- If social sign-in is needed, enable that provider in Clerk Dashboard before adding social buttons in UI.
