@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
 
 export async function GET(
   request: NextRequest,
@@ -23,7 +24,7 @@ export async function GET(
     }
 
     return NextResponse.json({ comments });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -38,10 +39,9 @@ export async function POST(
   try {
     const { id: postId } = await params;
     const supabase = await createClient();
+    const userId = await resolveAuthenticatedUserId(request);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -59,7 +59,7 @@ export async function POST(
       .from("post_comments")
       .insert({
         post_id: postId,
-        author_id: user.id,
+        author_id: userId,
         content: content.trim(),
       })
       .select(`
@@ -72,14 +72,8 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Update comments count on post
-    await supabase
-      .from("posts")
-      .update({ comments_count: supabase.rpc("increment") })
-      .eq("id", postId);
-
-    return NextResponse.json({ comment }, { status: 201 });
-  } catch (error) {
+    return NextResponse.json({ comment, actor_user_id: userId }, { status: 201 });
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

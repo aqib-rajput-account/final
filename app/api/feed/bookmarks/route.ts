@@ -1,17 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await resolveAuthenticatedUserId(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -23,17 +21,16 @@ export async function POST(request: Request) {
 
     const { error } = await supabase
       .from('post_bookmarks')
-      .insert({ post_id: postId, user_id: user.id })
+      .insert({ post_id: postId, user_id: userId })
 
     if (error) {
-      // If it already exists (code 23505 is unique violation in Postgres for PK), just return success
       if (error.code === '23505') {
-        return NextResponse.json({ success: true, message: 'Already bookmarked' })
+        return NextResponse.json({ success: true, message: 'Already bookmarked', actor_user_id: userId })
       }
       throw error
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, actor_user_id: userId })
   } catch (error) {
     console.error('Error bookmarking post:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -43,12 +40,9 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const supabase = await createClient()
-    
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await resolveAuthenticatedUserId(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -62,13 +56,13 @@ export async function DELETE(request: Request) {
       .from('post_bookmarks')
       .delete()
       .eq('post_id', postId)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
 
     if (error) {
       throw error
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, actor_user_id: userId })
   } catch (error) {
     console.error('Error unbookmarking post:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

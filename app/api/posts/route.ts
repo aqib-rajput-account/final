@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
-    
+
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = parseInt(searchParams.get("offset") || "0");
     const mosque_id = searchParams.get("mosque_id");
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ posts });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -43,10 +44,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    const userId = await resolveAuthenticatedUserId(request);
+
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const { data: post, error } = await supabase
       .from("posts")
       .insert({
-        author_id: user.id,
+        author_id: userId,
         content: content.trim(),
         mosque_id: mosque_id || null,
         image_url: image_url || null,
@@ -78,8 +78,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ post }, { status: 201 });
-  } catch (error) {
+    return NextResponse.json({ post, actor_user_id: userId }, { status: 201 });
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
 
 export async function GET(
   request: NextRequest,
@@ -27,7 +28,7 @@ export async function GET(
     }
 
     return NextResponse.json({ post });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -42,17 +43,15 @@ export async function PATCH(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const userId = await resolveAuthenticatedUserId(request);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
     const { content, image_url } = body;
 
-    // First check if user owns this post
     const { data: existingPost, error: fetchError } = await supabase
       .from("posts")
       .select("author_id")
@@ -63,7 +62,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 
-    if (existingPost.author_id !== user.id) {
+    if (existingPost.author_id !== userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -85,8 +84,8 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ post });
-  } catch (error) {
+    return NextResponse.json({ post, actor_user_id: userId });
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -101,11 +100,24 @@ export async function DELETE(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const userId = await resolveAuthenticatedUserId(request);
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: existingPost, error: fetchError } = await supabase
+      .from("posts")
+      .select("author_id")
+      .eq("id", id)
+      .single();
+
+    if (fetchError) {
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    if (existingPost.author_id !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { error } = await supabase
@@ -117,8 +129,8 @@ export async function DELETE(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
+    return NextResponse.json({ success: true, actor_user_id: userId });
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
