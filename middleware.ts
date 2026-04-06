@@ -21,7 +21,9 @@ const isShuraRoute = createRouteMatcher(["/shura(.*)"]);
 
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
-    await auth.protect();
+    await auth.protect({
+      unauthenticatedUrl: "/sign-in",
+    });
   }
 
   const { orgRole } = await auth();

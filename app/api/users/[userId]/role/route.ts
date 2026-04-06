@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 // Role hierarchy for permission checking
 const ROLE_HIERARCHY = ["member", "imam", "shura", "admin", "super_admin"] as const;
@@ -27,23 +27,6 @@ function canManageUser(managerRole: UserRole, targetRole: UserRole): boolean {
   return false;
 }
 
-// Create a Supabase client with the service role key for admin operations
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error("Missing Supabase environment variables");
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
-
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ userId: string }> }
@@ -64,7 +47,7 @@ export async function PATCH(
     }
 
     // Get the current user's profile to check their role
-    const supabase = getSupabaseAdmin();
+    const supabase = createSupabaseAdmin();
     
     const { data: currentUserProfile, error: currentUserError } = await supabase
       .from("profiles")
