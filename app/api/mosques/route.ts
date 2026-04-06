@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
-    
+
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = parseInt(searchParams.get("offset") || "0");
     const search = searchParams.get("search");
@@ -23,11 +23,11 @@ export async function GET(request: NextRequest) {
     if (search) {
       query = query.or(`name.ilike.%${search}%,city.ilike.%${search}%,address.ilike.%${search}%`);
     }
-    
+
     if (city) {
       query = query.eq("city", city);
     }
-    
+
     if (state) {
       query = query.eq("state", state);
     }
@@ -57,9 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     const role = normalizeClerkRole(orgRole);
-    if (!canManageAllMosques(role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const canAutoVerify = canManageAllMosques(role);
 
     const body = await request.json();
     const {
@@ -108,7 +106,7 @@ export async function POST(request: NextRequest) {
         capacity,
         established_year,
         admin_id: userId,
-        is_verified: body.is_verified ?? true,
+        is_verified: canAutoVerify ? (body.is_verified ?? true) : false,
       })
       .select()
       .single();

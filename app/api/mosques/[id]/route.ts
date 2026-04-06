@@ -64,10 +64,37 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    const allowedFields = [
+      "name",
+      "address",
+      "city",
+      "state",
+      "country",
+      "zip_code",
+      "latitude",
+      "longitude",
+      "phone",
+      "email",
+      "website",
+      "description",
+      "image_url",
+      "facilities",
+      "capacity",
+      "established_year",
+      "is_verified",
+    ] as const;
+
+    const updates = Object.fromEntries(
+      Object.entries(body).filter(([key]) => allowedFields.includes(key as (typeof allowedFields)[number]))
+    );
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
 
     const { data: mosque, error } = await supabase
       .from("mosques")
-      .update(body)
+      .update(updates)
       .eq("id", id)
       .select()
       .single();
