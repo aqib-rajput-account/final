@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { auth } from "@clerk/nextjs/server";
+import { canManageMosque, normalizeClerkRole } from "@/lib/auth/clerk-rbac";
 
 export async function GET(
   request: NextRequest,
@@ -23,7 +25,7 @@ export async function GET(
     }
 
     return NextResponse.json({ mosque });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -38,21 +40,26 @@ export async function PATCH(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const { userId, orgRole } = await auth();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user has admin or shura role
+    const role = normalizeClerkRole(orgRole);
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
-      .eq("id", user.id)
+      .select("mosque_id")
+      .eq("id", userId)
       .single();
 
-    if (!profile || !["admin", "shura"].includes(profile.role)) {
+    if (
+      !canManageMosque({
+        role,
+        targetMosqueId: id,
+        userMosqueId: profile?.mosque_id ?? null,
+      })
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -70,7 +77,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({ mosque });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -85,21 +92,14 @@ export async function DELETE(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const { userId, orgRole } = await auth();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user has admin role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "admin") {
+    const role = normalizeClerkRole(orgRole);
+    if (role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -113,7 +113,7 @@ export async function DELETE(
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
