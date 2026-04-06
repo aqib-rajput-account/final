@@ -16,12 +16,14 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
     const offset = parseInt(searchParams.get('offset') || '0')
+    const cursor = searchParams.get('cursor')
 
-    const { data: posts, error: postsError } = await supabase
+    let query = supabase
       .from('posts')
-      .select(`
+      .select(
+        `
         id,
         content,
         image_url,
@@ -42,10 +44,19 @@ export async function GET(request: Request) {
         ),
         post_likes(count),
         post_comments(count)
-      `)
+      `,
+        { count: 'exact' }
+      )
       .eq('is_published', true)
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+
+    if (cursor) {
+      query = query.lt('created_at', cursor).limit(limit)
+    } else {
+      query = query.range(offset, offset + limit - 1)
+    }
+
+    const { data: posts, error: postsError, count } = await query
 
     if (postsError) {
       return NextResponse.json({ error: postsError.message }, { status: 500 })
@@ -80,10 +91,15 @@ export async function GET(request: Request) {
       userBookmarks = bookmarks?.map((b) => b.post_id) || []
     }
 
+    const nextCursor =
+      formattedPosts.length === limit ? formattedPosts[formattedPosts.length - 1]?.created_at ?? null : null
+
     return NextResponse.json({
       data: formattedPosts,
       userLikes,
       userBookmarks,
+      nextCursor,
+      totalCount: count ?? null,
     })
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
