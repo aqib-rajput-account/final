@@ -19,6 +19,11 @@ This is a Connect Mosque Project of our Community.
      - `NEXT_PUBLIC_SUPABASE_URL`
      - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
      - `SUPABASE_SERVICE_ROLE_KEY`
+   - Optional Stream-powered message feed:
+     - `NEXT_PUBLIC_STREAM_API_KEY`
+     - `STREAM_API_SECRET`
+     - `STREAM_FEED_GROUP` (default: `timeline`)
+     - `STREAM_FEED_ID` (default: `global`)
 
 3. **Set Clerk URLs in Dashboard**
    - Sign-in URL: `/sign-in`

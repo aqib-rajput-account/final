@@ -8,3 +8,7 @@ export const hasSupabaseBrowserEnv = Boolean(
 )
 
 export const hasFullAuthConfig = hasClerkPublishableKey && hasSupabaseBrowserEnv
+
+export const hasStreamFeedConfig = Boolean(
+  process.env.NEXT_PUBLIC_STREAM_API_KEY && process.env.STREAM_API_SECRET
+)
