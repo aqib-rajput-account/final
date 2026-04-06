@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
+import { resolveIdempotencyKey } from "@/backend/realtime/idempotency";
+import { publishRealtimeEvent } from "@/backend/realtime/service";
 
 export async function POST(
   request: NextRequest,
@@ -40,6 +42,20 @@ export async function POST(
       return NextResponse.json({ error: likeError.message }, { status: 500 });
     }
 
+    const idempotencyKey = await resolveIdempotencyKey(request, `post-like:${userId}:${postId}`);
+    await publishRealtimeEvent({
+      eventType: "post.liked",
+      entityType: "post",
+      entityId: postId,
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: "home",
+      payload: {
+        postId,
+        liked: true,
+      },
+    });
+
     return NextResponse.json({ success: true, liked: true, actor_user_id: userId });
   } catch {
     return NextResponse.json(
@@ -71,6 +87,20 @@ export async function DELETE(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `post-unlike:${userId}:${postId}`);
+    await publishRealtimeEvent({
+      eventType: "post.unliked",
+      entityType: "post",
+      entityId: postId,
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: "home",
+      payload: {
+        postId,
+        liked: false,
+      },
+    });
 
     return NextResponse.json({ success: true, liked: false, actor_user_id: userId });
   } catch {

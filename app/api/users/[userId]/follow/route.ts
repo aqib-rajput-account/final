@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
+import { publishRealtimeEvent } from '@/backend/realtime/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +43,7 @@ export async function GET(
 }
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
@@ -69,6 +71,20 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    const idempotencyKey = await resolveIdempotencyKey(request, `follow-create:${user.id}:${targetUserId}`)
+    await publishRealtimeEvent({
+      eventType: 'follow.created',
+      entityType: 'follow',
+      entityId: `${user.id}:${targetUserId}`,
+      actorUserId: user.id,
+      targetUserIds: [targetUserId],
+      idempotencyKey,
+      payload: {
+        followerId: user.id,
+        followingId: targetUserId,
+      },
+    })
+
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -76,7 +92,7 @@ export async function POST(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
@@ -100,6 +116,20 @@ export async function DELETE(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `follow-delete:${user.id}:${targetUserId}`)
+    await publishRealtimeEvent({
+      eventType: 'follow.deleted',
+      entityType: 'follow',
+      entityId: `${user.id}:${targetUserId}`,
+      actorUserId: user.id,
+      targetUserIds: [targetUserId],
+      idempotencyKey,
+      payload: {
+        followerId: user.id,
+        followingId: targetUserId,
+      },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
+import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
+import { publishRealtimeEvent } from '@/backend/realtime/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -122,6 +124,20 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `feed-post-create:${userId}:${post.id}`)
+    await publishRealtimeEvent({
+      eventType: 'post.created',
+      entityType: 'post',
+      entityId: String(post.id),
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: 'home',
+      payload: {
+        postId: post.id,
+        authorId: userId,
+      },
+    })
 
     return NextResponse.json({ post, actor_user_id: userId }, { status: 201 })
   } catch {

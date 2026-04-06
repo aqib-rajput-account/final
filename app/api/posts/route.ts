@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
+import { resolveIdempotencyKey } from "@/backend/realtime/idempotency";
+import { publishRealtimeEvent } from "@/backend/realtime/service";
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,6 +79,20 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `post-create:${userId}:${post.id}`);
+    await publishRealtimeEvent({
+      eventType: "post.created",
+      entityType: "post",
+      entityId: String(post.id),
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: "home",
+      payload: {
+        postId: post.id,
+        authorId: userId,
+      },
+    });
 
     return NextResponse.json({ post, actor_user_id: userId }, { status: 201 });
   } catch {
