@@ -7,6 +7,11 @@ import { publishRealtimeEvent } from '@/backend/realtime/service'
 
 export const dynamic = 'force-dynamic'
 
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
+  const message = error?.message ?? ''
+  return message.includes(`Could not find the '${column}' column`) || message.includes(`column ${column} does not exist`)
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -40,8 +45,7 @@ export async function PATCH(
     const body = await request.json()
     const updates: Record<string, unknown> = {}
 
-    // Map frontend 'content' → DB 'body'
-    if (typeof body.content === 'string') updates.body = body.content.trim()
+    if (typeof body.content === 'string') updates.content = body.content.trim()
     if (typeof body.image_url === 'string' || body.image_url === null) updates.image_url = body.image_url
     if (typeof body.post_type === 'string') updates.post_type = body.post_type
     if (typeof body.category === 'string') updates.category = body.category
@@ -52,12 +56,26 @@ export async function PATCH(
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
     }
 
-    const { data: post, error } = await supabase
+    let { data: post, error } = await supabase
       .from('posts')
       .update(updates)
       .eq('id', id)
       .select('*')
       .single()
+
+    if (error && isMissingColumnError(error, 'content') && typeof body.content === 'string') {
+      const legacyUpdates = { ...updates }
+      delete legacyUpdates.content
+      legacyUpdates.body = body.content.trim()
+      const fallback = await supabase
+        .from('posts')
+        .update(legacyUpdates)
+        .eq('id', id)
+        .select('*')
+        .single()
+      post = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -74,7 +92,7 @@ export async function PATCH(
       feedStreamId: 'home',
       payload: {
         postId: id,
-        body: updates.body as string | undefined,
+        body: (updates.content as string | undefined) ?? (updates.body as string | undefined),
         image_url: updates.image_url,
       },
     })

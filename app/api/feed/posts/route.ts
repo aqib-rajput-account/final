@@ -18,6 +18,11 @@ import { validateCounterParity, validateTimelineConsistency } from '@/lib/infras
 
 export const dynamic = 'force-dynamic'
 
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
+  const message = error?.message ?? ''
+  return message.includes(`Could not find the '${column}' column`) || message.includes(`column ${column} does not exist`)
+}
+
 export async function GET(request: Request) {
   const startedAt = Date.now()
   const traceId = getTraceIdFromRequest(request)
@@ -62,37 +67,45 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
 
-    let query = supabase
-      .from('posts')
-      .select(
-        `
-        id,
-        body,
-        image_url,
-        post_type,
-        category,
-        metadata,
-        visibility,
-        is_published,
-        created_at,
-        updated_at,
-        author_id,
-        mosque_id,
-        like_count,
-        comment_count,
-        profiles:author_id(
+    const buildQuery = (legacyColumns = false) => {
+      const contentColumn = legacyColumns ? 'body' : 'content'
+      const likesColumn = legacyColumns ? 'like_count' : 'likes_count'
+      const commentsColumn = legacyColumns ? 'comment_count' : 'comments_count'
+      return supabase
+        .from('posts')
+        .select(
+          `
           id,
-          full_name,
-          avatar_url,
-          profession,
-          role
+          ${contentColumn},
+          image_url,
+          post_type,
+          category,
+          metadata,
+          visibility,
+          is_published,
+          created_at,
+          updated_at,
+          author_id,
+          mosque_id,
+          ${likesColumn},
+          ${commentsColumn},
+          profiles:author_id(
+            id,
+            full_name,
+            avatar_url,
+            profession,
+            role
+          )
+        `,
+          { count: 'exact' }
         )
-      `,
-        { count: 'exact' }
-      )
-      .eq('is_published', true)
-      .in('visibility', ['public', 'followers'])
-      .order('created_at', { ascending: false })
+        .eq('is_published', true)
+        .in('visibility', ['public', 'followers'])
+        .order('created_at', { ascending: false })
+    }
+
+    let legacyColumns = false
+    let query = buildQuery(false)
 
     if (cursor) {
       query = query.lt('created_at', cursor).limit(limit)
@@ -100,7 +113,26 @@ export async function GET(request: Request) {
       query = query.range(offset, offset + limit - 1)
     }
 
-    const { data: posts, error: postsError, count } = await query
+    let { data: posts, error: postsError, count } = await query
+
+    if (
+      postsError &&
+      (isMissingColumnError(postsError, 'content') ||
+        isMissingColumnError(postsError, 'likes_count') ||
+        isMissingColumnError(postsError, 'comments_count'))
+    ) {
+      legacyColumns = true
+      let fallbackQuery = buildQuery(true)
+      if (cursor) {
+        fallbackQuery = fallbackQuery.lt('created_at', cursor).limit(limit)
+      } else {
+        fallbackQuery = fallbackQuery.range(offset, offset + limit - 1)
+      }
+      const fallbackResult = await fallbackQuery
+      posts = fallbackResult.data
+      postsError = fallbackResult.error
+      count = fallbackResult.count
+    }
 
     if (postsError) {
       observeCounter('feed.read.errors.total', 1, { reason: 'query_error' })
@@ -117,14 +149,14 @@ export async function GET(request: Request) {
       posts
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
         .map((post: any) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { body, like_count, comment_count, ...rest } = post
+          const { content, body, likes_count, like_count, comments_count, comment_count, ...rest } = post
           return {
             ...rest,
-            content: body, // Map DB 'body' → API 'content'
-            likes_count: like_count || 0, // Map DB 'like_count' → API 'likes_count'
-            comments_count: comment_count || 0, // Map DB 'comment_count' → API 'comments_count'
+            content: content ?? body ?? '',
+            likes_count: likes_count ?? like_count ?? 0,
+            comments_count: comments_count ?? comment_count ?? 0,
             visibility: rest.visibility === 'followers' || rest.visibility === 'private' ? rest.visibility : 'public', // Sanitize visibility
+            legacyColumns,
           }
         }) || []
 
@@ -267,23 +299,53 @@ export async function POST(request: Request) {
 
     const safeVisibility = visibility === 'private' || visibility === 'followers' ? visibility : 'public'
 
-    const { data: post, error } = await supabase
+    const insertPayload = {
+      author_id: userId,
+      content: String(content).trim(),
+      image_url: image_url ?? null,
+      post_type: post_type ?? 'text',
+      category: category ?? 'general',
+      metadata: metadata ?? {},
+      mosque_id: mosque_id ?? null,
+      is_published: true,
+      visibility: safeVisibility,
+      likes_count: 0,
+      comments_count: 0,
+    }
+
+    let { data: post, error } = await supabase
       .from('posts')
-      .insert({
+      .insert(insertPayload)
+      .select('*')
+      .single()
+
+    if (
+      error &&
+      (isMissingColumnError(error, 'content') ||
+        isMissingColumnError(error, 'likes_count') ||
+        isMissingColumnError(error, 'comments_count'))
+    ) {
+      const legacyPayload = {
         author_id: userId,
-        body: String(content).trim(), // Map frontend 'content' to DB 'body'
+        body: String(content).trim(),
         image_url: image_url ?? null,
         post_type: post_type ?? 'text',
         category: category ?? 'general',
         metadata: metadata ?? {},
         mosque_id: mosque_id ?? null,
-        is_published: true, // Always publish on creation (Requirement 1.2)
+        is_published: true,
         visibility: safeVisibility,
         like_count: 0,
         comment_count: 0,
-      })
-      .select('*')
-      .single()
+      }
+      const fallback = await supabase
+        .from('posts')
+        .insert(legacyPayload)
+        .select('*')
+        .single()
+      post = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       observeCounter('feed.write.errors.total', 1, { reason: 'insert_failed' })

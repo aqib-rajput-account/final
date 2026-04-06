@@ -243,6 +243,7 @@ export function EnhancedSocialFeed() {
   const [postSearchQuery, setPostSearchQuery] = useState('')
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
+  const presenceLastUpdatedRef = useRef<number>(0)
 
   const getKey = useCallback((pageIndex: number, previousPageData: FeedPage | null) => {
     if (!userId) return null
@@ -313,8 +314,10 @@ export function EnhancedSocialFeed() {
 
   const onlineUsers = useMemo(() => {
     const data = (onlineUsersData as { data?: MemberSummary[] } | undefined)?.data
-    if (!data && lastStableOnlineUsers.current.length > 0) return lastStableOnlineUsers.current
-    if (data) lastStableOnlineUsers.current = data
+    if ((!data || data.length === 0) && lastStableOnlineUsers.current.length > 0) {
+      return lastStableOnlineUsers.current
+    }
+    if (data && data.length > 0) lastStableOnlineUsers.current = data
     return data || []
   }, [onlineUsersData])
 
@@ -469,7 +472,12 @@ export function EnhancedSocialFeed() {
     enabled: !!userId,
     feedStreamId: 'home',
     onEvent: handleRealtimeEvent,
-    onError: () => mutateFeed(),
+    onError: () => {
+      // Avoid full-feed revalidation storms during transient socket reconnects.
+      if (!feedPages || feedPages.length === 0) {
+        void mutateFeed()
+      }
+    },
   })
 
   usePresence({
@@ -482,7 +490,20 @@ export function EnhancedSocialFeed() {
         if (presences.length > 0) acc[key] = presences[0]
         return acc
       }, {})
-      setRealtimeOnline(flattened)
+      const now = Date.now()
+      const hasAnyOnline = Object.keys(flattened).length > 0
+      if (hasAnyOnline) {
+        presenceLastUpdatedRef.current = now
+        setRealtimeOnline(flattened)
+        return
+      }
+
+      // Presence can briefly sync as empty during reconnect.
+      // Keep the previous state for a short grace window to prevent "online blinking".
+      if (now - presenceLastUpdatedRef.current < 8000) {
+        return
+      }
+      setRealtimeOnline({})
     },
   })
 
