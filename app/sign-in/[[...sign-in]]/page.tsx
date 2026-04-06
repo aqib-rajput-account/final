@@ -49,6 +49,21 @@ export default function SignInPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <Clerk.Connection name="google" asChild>
+                        <Button variant="outline" className="w-full h-11">
+                          Continue with Google
+                        </Button>
+                      </Clerk.Connection>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+                        </div>
+                      </div>
+
                       {/* Email Field */}
                       <Clerk.Field name="identifier" className="space-y-2">
                         <Clerk.Label asChild>
@@ -99,6 +114,11 @@ export default function SignInPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <Clerk.Connection name="google" asChild>
+                        <Button variant="outline" className="w-full h-11">
+                          Google
+                        </Button>
+                      </Clerk.Connection>
                       <SignIn.SupportedStrategy name="email_code" asChild>
                         <Button variant="outline" className="w-full h-11">
                           Email code
