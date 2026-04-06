@@ -32,7 +32,6 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
 import { usePresence } from '@/lib/hooks/use-realtime'
 import { useRealtimeGateway } from '@/lib/hooks/use-realtime-gateway'
@@ -149,6 +148,7 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
+  const [hasPendingRealtimeRefresh, setHasPendingRealtimeRefresh] = useState(false)
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -173,8 +173,8 @@ export function EnhancedSocialFeed() {
     revalidateFirstPage: false,
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    keepPreviousData: true,
     persistSize: true,
+    revalidateAll: false,
     dedupingInterval: 3000,
   })
 
@@ -247,7 +247,7 @@ export function EnhancedSocialFeed() {
     }
 
     if (event.eventType === 'post.created' || event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
-      mutateFeed()
+      setHasPendingRealtimeRefresh(true)
       return
     }
 
@@ -255,7 +255,12 @@ export function EnhancedSocialFeed() {
       mutateMembers()
       mutateOnlineUsers()
     }
-  }, [mutateFeed, mutateMembers, mutateOnlineUsers, patchFeed])
+  }, [mutateMembers, mutateOnlineUsers, patchFeed])
+
+  const refreshFeedPosts = useCallback(async () => {
+    await mutateFeed()
+    setHasPendingRealtimeRefresh(false)
+  }, [mutateFeed])
 
   useEffect(() => {
     const returnContext = resolveFeedReturnContext()
@@ -533,7 +538,7 @@ export function EnhancedSocialFeed() {
                 <Textarea placeholder="Share an update… use @name for mentions" value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] resize-none" />
                 {newPostImage && (
                   <div className="relative inline-block">
-                    <Image src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
+                    <img src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
                     <Button size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setNewPostImage(null)}>
                       <X className="h-3 w-3" />
                     </Button>
@@ -555,7 +560,19 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
+          {(feedValidating || hasPendingRealtimeRefresh) && (
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
+              <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+            </div>
+          )}
+          {hasPendingRealtimeRefresh && (
+            <div className="flex justify-center">
+              <Button variant="secondary" size="sm" onClick={() => { void refreshFeedPosts() }}>
+                Show new posts
+              </Button>
+            </div>
+          )}
           {feedLoading ? (
             <>
               <PostSkeleton />
@@ -719,8 +736,8 @@ function PostCard({
         )}
 
         {post.image_url && (
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden">
-            <Image src={post.image_url} alt="Post image" fill className="object-cover" />
+          <div className="w-full aspect-video rounded-lg overflow-hidden">
+            <img src={post.image_url} alt="Post image" className="h-full w-full object-cover" />
           </div>
         )}
 

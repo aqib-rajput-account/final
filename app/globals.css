@@ -129,4 +129,25 @@
   .font-amiri {
     font-family: var(--font-amiri);
   }
+
+  .feed-refresh-glow {
+    animation: feed-refresh-glow 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes feed-refresh-glow {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.35;
+  }
+  75% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
 }
