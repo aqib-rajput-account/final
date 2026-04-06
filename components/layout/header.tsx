@@ -20,7 +20,9 @@ import {
   LogOut,
   User,
   Settings,
-  MessageSquare
+  MessageSquare,
+  ChevronDown,
+  PanelTop
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuth } from '@/lib/auth'
@@ -112,21 +114,37 @@ export function Header() {
 
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Role-based navigation */}
-          {mounted && isSignedIn && isShura && (
-            <Link href="/shura" className="hidden md:block">
-              <Button variant="outline" size="sm" className="gap-2 border-teal-600/50 text-teal-600 hover:bg-teal-50 hover:text-teal-700 dark:border-teal-500/50 dark:text-teal-500 dark:hover:bg-teal-950 dark:hover:text-teal-400 rounded-xl">
-                <Shield className="h-4 w-4" />
-                Shura
-              </Button>
-            </Link>
-          )}
-          {mounted && isSignedIn && isAdmin && (
-            <Link href="/admin" className="hidden md:block">
-              <Button variant="outline" size="sm" className="gap-2 rounded-xl border-border/60">
-                <LayoutDashboard className="h-4 w-4" />
-                Admin
-              </Button>
-            </Link>
+          {mounted && isSignedIn && (isShura || isAdmin) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="hidden md:inline-flex gap-2 rounded-xl border-border/60">
+                  <PanelTop className="h-4 w-4" />
+                  Manage Panel
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52 rounded-xl border-border/60">
+                <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Panel
+                </div>
+                {isAdmin && (
+                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
+                    <Link href="/admin" className="flex items-center cursor-pointer">
+                      <LayoutDashboard className="mr-2 h-4 w-4" />
+                      Admin Panel
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isShura && (
+                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
+                    <Link href="/shura" className="flex items-center cursor-pointer">
+                      <Shield className="mr-2 h-4 w-4 text-teal-600 dark:text-teal-400" />
+                      Shura Panel
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {!mounted ? (
