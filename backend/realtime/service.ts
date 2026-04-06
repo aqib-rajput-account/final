@@ -144,7 +144,7 @@ export async function listRealtimeEventsSince(input: {
   if (requiredChannels.length === 1) {
     query = query.contains('channels', [requiredChannels[0]])
   } else {
-    query = query.or(requiredChannels.map((channel) => `channels.cs.{${channel}}`).join(','))
+    query = query.or(requiredChannels.map((channel) => `channels.cs.{"${channel}"}`).join(','))
   }
 
   const { data, error } = await query
@@ -156,7 +156,7 @@ export async function listRealtimeEventsSince(input: {
   const hiddenUserIds = await getMutedAndBlockedUserIds(supabase, input.userId)
 
   const events = (data ?? [])
-    .filter((event) => {
+    .filter((event: any) => {
       if (hiddenUserIds.has(event.actor_user_id)) return false
 
       const payloadAuthorId = event.payload?.authorId
@@ -166,7 +166,7 @@ export async function listRealtimeEventsSince(input: {
 
       return true
     })
-    .map((event) => ({
+    .map((event: any) => ({
       eventId: event.event_id,
       version: event.version,
       eventType: event.event_type,

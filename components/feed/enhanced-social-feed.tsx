@@ -192,8 +192,8 @@ export function EnhancedSocialFeed() {
   const posts = useMemo(() => {
     let allPosts = feedPages?.flatMap((page) => page.data) ?? []
     
-    // If we have no data from SWR but we have stable posts from before, and we are validating, keep them.
-    if (allPosts.length === 0 && lastStablePosts.current.length > 0 && feedValidating) {
+    // If we have no data from SWR but we have stable posts from before, and we are validating or loading, keep them.
+    if (allPosts.length === 0 && lastStablePosts.current.length > 0 && (feedValidating || feedLoading)) {
       allPosts = lastStablePosts.current
     } else if (allPosts.length > 0) {
       lastStablePosts.current = allPosts
@@ -207,7 +207,7 @@ export function EnhancedSocialFeed() {
       )
     }
     return allPosts
-  }, [feedPages, postSearchQuery, feedValidating])
+  }, [feedPages, postSearchQuery, feedValidating, feedLoading])
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor

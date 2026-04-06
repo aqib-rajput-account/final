@@ -70,7 +70,17 @@ export class RealtimeGatewayClient {
       this.channels.push(channel)
     }
 
-    await this.catchUp()
+    try {
+      await this.catchUp()
+    } catch (error) {
+      logClientTrace({
+        traceId: this.traceId,
+        message: 'Realtime catch-up failed, continuing with live subscription',
+        level: 'error',
+        tags: { error: error instanceof Error ? error.message : String(error) },
+      })
+      // We don't re-throw here to allow the live connection to stay active
+    }
     observeClientMetric('realtime.connect.latency_ms', Date.now() - startedAt, {
       channelCount: connectionInfo.channels.length,
     })
