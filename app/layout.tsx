@@ -3,7 +3,6 @@ import { Analytics } from '@vercel/analytics/next'
 import { AppProviders } from '@/components/providers'
 import './globals.css'
 
-
 export const metadata: Metadata = {
   title: 'MosqueConnect - Virtual Mosque Management Platform',
   description: 'Connect with your local mosques, find prayer times, explore events, and strengthen your community bonds through MosqueConnect.',
@@ -51,4 +50,3 @@ export default function RootLayout({
     </html>
   )
 }
-
