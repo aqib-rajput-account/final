@@ -1,24 +1,8 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono, Amiri } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AppProviders } from '@/components/providers'
 import './globals.css'
 
-const geist = Geist({ 
-  subsets: ["latin"],
-  variable: '--font-geist'
-})
-
-const geistMono = Geist_Mono({ 
-  subsets: ["latin"],
-  variable: '--font-geist-mono'
-})
-
-const amiri = Amiri({ 
-  subsets: ["arabic", "latin"],
-  weight: ['400', '700'],
-  variable: '--font-amiri'
-})
 
 export const metadata: Metadata = {
   title: 'MosqueConnect - Virtual Mosque Management Platform',
@@ -60,7 +44,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geist.variable} ${geistMono.variable} ${amiri.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <AppProviders>{children}</AppProviders>
         <Analytics />
       </body>
