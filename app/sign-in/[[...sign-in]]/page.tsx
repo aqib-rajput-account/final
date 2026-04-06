@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthUnavailableState } from "@/components/auth/auth-unavailable-state";
+import { GoogleIcon } from "@/components/auth/google-icon";
 import { hasClerkPublishableKey } from "@/lib/config";
 import Link from "next/link";
 import { Building2 } from "lucide-react";
@@ -50,7 +51,8 @@ export default function SignInPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <Clerk.Connection name="google" asChild>
-                        <Button variant="outline" className="w-full h-11">
+                        <Button variant="outline" className="w-full h-11 gap-2">
+                          <GoogleIcon />
                           Continue with Google
                         </Button>
                       </Clerk.Connection>
@@ -115,7 +117,8 @@ export default function SignInPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <Clerk.Connection name="google" asChild>
-                        <Button variant="outline" className="w-full h-11">
+                        <Button variant="outline" className="w-full h-11 gap-2">
+                          <GoogleIcon />
                           Google
                         </Button>
                       </Clerk.Connection>

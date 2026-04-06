@@ -23,7 +23,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, Upload, Mail, Phone, Shield, Calendar } from "lucide-react";
+import { Loader2, Upload, Mail, Phone, Shield, Calendar, Send } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -122,6 +122,8 @@ export default function ProfilePage() {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const isEmailVerified = Boolean(profile?.is_verified);
 
   if (authLoading) {
     return (
@@ -346,9 +348,12 @@ export default function ProfilePage() {
                   <div>
                     <p className="font-medium">Email Address</p>
                     <p className="text-sm text-muted-foreground">{profile.email}</p>
+                    {!isEmailVerified && hasClerkPublishableKey && (
+                      <EmailVerificationButton />
+                    )}
                   </div>
-                  <Badge variant={profile.is_verified ? "default" : "secondary"}>
-                    {profile.is_verified ? "Verified" : "Unverified"}
+                  <Badge variant={isEmailVerified ? "default" : "secondary"}>
+                    {isEmailVerified ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
                 <Separator />
@@ -382,6 +387,52 @@ export default function ProfilePage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+function EmailVerificationButton() {
+  const { user } = useUser();
+  const [sendingVerification, setSendingVerification] = useState(false);
+
+  const sendEmailVerificationLink = async () => {
+    if (!user?.primaryEmailAddress) {
+      toast.error("No primary email found for this account");
+      return;
+    }
+
+    setSendingVerification(true);
+    try {
+      await user.primaryEmailAddress.prepareVerification({
+        strategy: "email_link",
+        redirectUrl: `${window.location.origin}/profile`,
+      });
+      toast.success("Verification email sent. Please check your inbox.");
+    } catch {
+      toast.error("Unable to send verification email. Please try again.");
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
+  return (
+    <Button
+      onClick={sendEmailVerificationLink}
+      variant="link"
+      className="h-auto p-0 mt-2 text-primary"
+      disabled={sendingVerification}
+    >
+      {sendingVerification ? (
+        <>
+          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+          Sending verification email...
+        </>
+      ) : (
+        <>
+          <Send className="mr-2 h-3.5 w-3.5" />
+          Send verification link
+        </>
+      )}
+    </Button>
   );
 }
 
