@@ -3,12 +3,14 @@ import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
+import { buildCacheKey, deleteCachedValue, getCachedValue, hashCacheKey, setCachedValue } from '@/lib/infrastructure/cache'
+import { enqueueWork } from '@/lib/infrastructure/queue'
+import { enforceRateLimit } from '@/lib/infrastructure/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient()
     const { userId } = await auth()
 
     if (!userId) {
@@ -19,6 +21,25 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
     const offset = parseInt(searchParams.get('offset') || '0')
     const cursor = searchParams.get('cursor')
+    const cacheKey = hashCacheKey(buildCacheKey([userId, limit, offset, cursor]))
+    const cachedResponse = await getCachedValue<{
+      data: unknown[]
+      userLikes: string[]
+      userBookmarks: string[]
+      nextCursor: string | null
+      totalCount: number | null
+    }>('timeline', cacheKey)
+
+    if (cachedResponse) {
+      return NextResponse.json(cachedResponse, {
+        headers: {
+          'Cache-Control': 'private, max-age=20, stale-while-revalidate=60',
+          'X-Cache': 'HIT',
+        },
+      })
+    }
+
+    const supabase = await createClient()
 
     let query = supabase
       .from('posts')
@@ -94,12 +115,21 @@ export async function GET(request: Request) {
     const nextCursor =
       formattedPosts.length === limit ? formattedPosts[formattedPosts.length - 1]?.created_at ?? null : null
 
-    return NextResponse.json({
+    const responsePayload = {
       data: formattedPosts,
       userLikes,
       userBookmarks,
       nextCursor,
       totalCount: count ?? null,
+    }
+
+    await setCachedValue('timeline', cacheKey, responsePayload, 20)
+
+    return NextResponse.json(responsePayload, {
+      headers: {
+        'Cache-Control': 'private, max-age=20, stale-while-revalidate=60',
+        'X-Cache': 'MISS',
+      },
     })
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -113,6 +143,30 @@ export async function POST(request: Request) {
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const rateLimit = await enforceRateLimit({
+      namespace: 'feed-write',
+      identifier: userId,
+      windowSeconds: 60,
+      maxRequests: 15,
+    })
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Rate limit exceeded',
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rateLimit.retryAfterSeconds),
+            'X-RateLimit-Limit': String(rateLimit.limit),
+            'X-RateLimit-Remaining': String(rateLimit.remaining),
+          },
+        }
+      )
     }
 
     const body = await request.json()
@@ -154,6 +208,35 @@ export async function POST(request: Request) {
         authorId: userId,
       },
     })
+
+    await enqueueWork({
+      queue: 'fanout',
+      taskType: 'feed.post.created',
+      payload: {
+        postId: String(post.id),
+        authorId: userId,
+      },
+    })
+
+    await enqueueWork({
+      queue: 'notifications',
+      taskType: 'notifications.post.created',
+      payload: {
+        postId: String(post.id),
+        actorUserId: userId,
+      },
+    })
+
+    await enqueueWork({
+      queue: 'counter-aggregation',
+      taskType: 'counters.post.created',
+      payload: {
+        postId: String(post.id),
+        actorUserId: userId,
+      },
+    })
+
+    await deleteCachedValue('timeline', hashCacheKey(buildCacheKey([userId, 20, 0, null])))
 
     return NextResponse.json({ post, actor_user_id: userId }, { status: 201 })
   } catch {

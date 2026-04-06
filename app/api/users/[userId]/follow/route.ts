@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
+import { enforceRateLimit } from '@/lib/infrastructure/rate-limit'
+import { enqueueWork } from '@/lib/infrastructure/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +64,20 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot follow yourself' }, { status: 400 })
     }
 
+    const rateLimit = await enforceRateLimit({
+      namespace: 'follow-write',
+      identifier: user.id,
+      windowSeconds: 60,
+      maxRequests: 20,
+    })
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded', retryAfterSeconds: rateLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      )
+    }
+
     const { error } = await supabase.from('user_follows').insert({
       follower_id: user.id,
       following_id: targetUserId,
@@ -79,6 +95,24 @@ export async function POST(
       actorUserId: user.id,
       targetUserIds: [targetUserId],
       idempotencyKey,
+      payload: {
+        followerId: user.id,
+        followingId: targetUserId,
+      },
+    })
+
+    await enqueueWork({
+      queue: 'fanout',
+      taskType: 'feed.follow.created',
+      payload: {
+        followerId: user.id,
+        followingId: targetUserId,
+      },
+    })
+
+    await enqueueWork({
+      queue: 'notifications',
+      taskType: 'notifications.follow.created',
       payload: {
         followerId: user.id,
         followingId: targetUserId,
@@ -103,6 +137,20 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const rateLimit = await enforceRateLimit({
+      namespace: 'follow-write',
+      identifier: user.id,
+      windowSeconds: 60,
+      maxRequests: 20,
+    })
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded', retryAfterSeconds: rateLimit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+      )
     }
 
     const { userId: targetUserId } = await params

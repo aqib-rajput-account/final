@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
 import { resolveIdempotencyKey } from "@/backend/realtime/idempotency";
 import { publishRealtimeEvent } from "@/backend/realtime/service";
+import { enforceRateLimit } from "@/lib/infrastructure/rate-limit";
 
 export async function POST(
   request: NextRequest,
@@ -15,6 +16,20 @@ export async function POST(
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rateLimit = await enforceRateLimit({
+      namespace: "post-like-write",
+      identifier: userId,
+      windowSeconds: 60,
+      maxRequests: 40,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", retryAfterSeconds: rateLimit.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { data: existingLike } = await supabase
@@ -76,6 +91,20 @@ export async function DELETE(
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rateLimit = await enforceRateLimit({
+      namespace: "post-like-write",
+      identifier: userId,
+      windowSeconds: 60,
+      maxRequests: 40,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", retryAfterSeconds: rateLimit.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+      );
     }
 
     const { error } = await supabase
