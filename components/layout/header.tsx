@@ -77,7 +77,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-3 lg:px-8">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4 md:gap-8">
           <Link href="/" className="flex items-center gap-2 group transition-all active:scale-95">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/20 group-hover:shadow-primary/30 transition-all">
@@ -88,7 +88,7 @@ export function Header() {
             </span>
           </Link>
 
-          <div className="hidden lg:flex lg:gap-1">
+          <div className="hidden lg:flex lg:items-center lg:gap-1.5">
             {navigation.map((item) => {
               const isActive = pathname === item.href
               // Hide auth-required links for unauthenticated users
@@ -98,7 +98,7 @@ export function Header() {
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all",
+                    "flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all",
                     isActive 
                       ? "bg-primary/10 text-primary shadow-sm" 
                       : "text-muted-foreground hover:bg-muted hover:text-foreground hover:translate-y-[-1px]"
@@ -112,14 +112,14 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-2">
           {/* Role-based navigation */}
           {mounted && isSignedIn && (isShura || isAdmin) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="hidden md:inline-flex gap-2 rounded-xl border-border/60">
                   <PanelTop className="h-4 w-4" />
-                  Manage Panel
+                  Manage
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
