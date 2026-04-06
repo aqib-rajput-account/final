@@ -1,4 +1,6 @@
 import { randomUUID } from 'crypto'
+import { evaluateQueueBacklogAlert } from './alerts'
+import { createTraceId, observeCounter, observeGauge } from './observability'
 
 type QueueMessage<TPayload extends Record<string, unknown>> = {
   id: string
@@ -36,6 +38,7 @@ export async function enqueueWork<TPayload extends Record<string, unknown>>(inpu
   queue: string
   taskType: string
   payload: TPayload
+  traceId?: string
 }) {
   const message: QueueMessage<TPayload> = {
     id: randomUUID(),
@@ -48,6 +51,9 @@ export async function enqueueWork<TPayload extends Record<string, unknown>>(inpu
   const entries = queueMemory.get(queueName) ?? []
   entries.push(message)
   queueMemory.set(queueName, entries)
+  observeCounter('queue.enqueue.total', 1, { queue: input.queue, taskType: input.taskType })
+  observeGauge('queue.backlog.depth', entries.length, { queue: input.queue })
+  evaluateQueueBacklogAlert({ queue: input.queue, depth: entries.length, traceId: input.traceId ?? createTraceId() })
 
   await redisPost('/rpush', [queueName, JSON.stringify(message)])
 
@@ -59,6 +65,8 @@ export function dequeueWork(queue: string) {
   const entries = queueMemory.get(queueName) ?? []
   const message = entries.shift() ?? null
   queueMemory.set(queueName, entries)
+  observeCounter('queue.dequeue.total', message ? 1 : 0, { queue })
+  observeGauge('queue.backlog.depth', entries.length, { queue })
   return message
 }
 

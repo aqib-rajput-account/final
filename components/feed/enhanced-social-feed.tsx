@@ -38,6 +38,8 @@ import { usePresence } from '@/lib/hooks/use-realtime'
 import { useRealtimeGateway } from '@/lib/hooks/use-realtime-gateway'
 import type { RealtimeEventEnvelope } from '@/backend/realtime/types'
 import { cn } from '@/lib/utils'
+import { createClientTraceId, logClientTrace, observeClientMetric } from '@/lib/infrastructure/web-observability'
+import { resolveFeedReturnContext, trackFeedFunnelEvent } from '@/lib/infrastructure/product-analytics'
 
 interface FeedPost {
   id: string
@@ -147,6 +149,7 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
+  const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
   const getKey = useCallback((pageIndex: number, previousPageData: FeedPage | null) => {
@@ -211,6 +214,12 @@ export function EnhancedSocialFeed() {
   }, [mutateFeed])
 
   const handleRealtimeEvent = useCallback((event: RealtimeEventEnvelope) => {
+    observeClientMetric('feed.realtime.events_received.total', 1, { eventType: event.eventType })
+    logClientTrace({
+      traceId: String((event.payload as Record<string, unknown>)?.traceId ?? traceIdRef.current),
+      message: 'Feed consumed realtime event',
+      tags: { eventType: event.eventType, entityId: event.entityId },
+    })
     if (event.eventType === 'post.liked' || event.eventType === 'post.unliked') {
       const postId = String(event.payload.postId ?? event.entityId)
       const direction = event.eventType === 'post.liked' ? 1 : -1
@@ -235,6 +244,19 @@ export function EnhancedSocialFeed() {
       mutateOnlineUsers()
     }
   }, [mutateFeed, mutateMembers, mutateOnlineUsers, patchFeed])
+
+  useEffect(() => {
+    const returnContext = resolveFeedReturnContext()
+    trackFeedFunnelEvent({ funnel: 'feed_engagement', step: 'view', traceId: traceIdRef.current })
+    if (returnContext.isReturn) {
+      trackFeedFunnelEvent({
+        funnel: 'feed_engagement',
+        step: 'return',
+        traceId: traceIdRef.current,
+        metadata: { minutesSinceLastView: returnContext.minutesSinceLastView },
+      })
+    }
+  }, [])
 
   useRealtimeGateway({
     enabled: !!userId,
@@ -320,6 +342,12 @@ export function EnhancedSocialFeed() {
     if (!userId || !content.trim()) return toast.error('Please write something to post')
 
     setIsPosting(true)
+    trackFeedFunnelEvent({
+      funnel: 'feed_engagement',
+      step: 'interact',
+      traceId: traceIdRef.current,
+      metadata: { action: opts?.asShare ? 'share_post' : 'create_post' },
+    })
     optimisticAddPost(content.trim(), newPostImage, opts?.asShare && opts.sourcePost ? {
       shared_post_id: opts.sourcePost.id,
       shared_author_name: opts.sourcePost.profiles?.full_name,
@@ -358,6 +386,12 @@ export function EnhancedSocialFeed() {
 
   const handleLike = useCallback(async (postId: string, isLiked: boolean) => {
     if (!userId) return toast.error('Please sign in to like posts')
+    trackFeedFunnelEvent({
+      funnel: 'feed_engagement',
+      step: 'interact',
+      traceId: traceIdRef.current,
+      metadata: { action: isLiked ? 'unlike' : 'like', postId },
+    })
 
     patchFeed((post) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + (isLiked ? -1 : 1)) } : post))
     mutateFeed((pages) => pages?.map((page) => ({
@@ -378,6 +412,12 @@ export function EnhancedSocialFeed() {
   const handleCommentCreate = useCallback(async (postId: string, content: string) => {
     const trimmed = content.trim()
     if (!trimmed) return
+    trackFeedFunnelEvent({
+      funnel: 'feed_engagement',
+      step: 'interact',
+      traceId: traceIdRef.current,
+      metadata: { action: 'comment', postId },
+    })
 
     patchFeed((post) => (post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post))
 
