@@ -23,13 +23,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, Upload, Mail, Phone, Shield, Calendar } from "lucide-react";
+import { Loader2, Upload, Mail, Phone, Shield, Calendar, Send } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { profile, userId, isSignedIn, loading: authLoading, refreshProfile, resolvedRole } = useAuth();
   const [saving, setSaving] = useState(false);
   const [bootstrappingProfile, setBootstrappingProfile] = useState(false);
+  const [emailVerifiedOverride, setEmailVerifiedOverride] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
@@ -122,6 +123,8 @@ export default function ProfilePage() {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const isEmailVerified = emailVerifiedOverride || Boolean(profile?.is_verified);
 
   if (authLoading) {
     return (
@@ -346,9 +349,12 @@ export default function ProfilePage() {
                   <div>
                     <p className="font-medium">Email Address</p>
                     <p className="text-sm text-muted-foreground">{profile.email}</p>
+                    {!isEmailVerified && hasClerkPublishableKey && (
+                      <EmailVerificationButton onVerified={() => setEmailVerifiedOverride(true)} />
+                    )}
                   </div>
-                  <Badge variant={profile.is_verified ? "default" : "secondary"}>
-                    {profile.is_verified ? "Verified" : "Unverified"}
+                  <Badge variant={isEmailVerified ? "default" : "secondary"}>
+                    {isEmailVerified ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
                 <Separator />
@@ -381,6 +387,130 @@ export default function ProfilePage() {
         </div>
       </main>
       <Footer />
+    </div>
+  );
+}
+
+function EmailVerificationButton({ onVerified }: { onVerified: () => void }) {
+  const { user } = useUser();
+  const { refreshProfile } = useAuth();
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+
+  const sendEmailVerificationLink = async () => {
+    if (!user?.primaryEmailAddress) {
+      toast.error("No primary email found for this account");
+      return;
+    }
+
+    setSendingVerification(true);
+    try {
+      await user.primaryEmailAddress.prepareVerification({
+        strategy: "email_code",
+      });
+      setShowCodeInput(true);
+      toast.success("Verification email sent with a 6-digit code. Please check your inbox.");
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "errors" in error
+          ? ((error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.longMessage ??
+            (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.message)
+          : null;
+      toast.error(message || "Unable to send verification email. Check Clerk email settings and try again.");
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
+  const verifyEmailCode = async () => {
+    if (!user?.primaryEmailAddress) {
+      toast.error("No primary email found for this account");
+      return;
+    }
+
+    const trimmedCode = verificationCode.trim();
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      toast.error("Please enter a valid 6-digit code.");
+      return;
+    }
+
+    setVerifyingCode(true);
+    try {
+      const result = await user.primaryEmailAddress.attemptVerification({
+        code: trimmedCode,
+      });
+
+      if (result.verification.status === "verified") {
+        await user.reload();
+        await refreshProfile();
+        setShowCodeInput(false);
+        setVerificationCode("");
+        onVerified();
+        toast.success("Email verified successfully.");
+      } else {
+        toast.error("Verification is not complete yet. Please try again.");
+      }
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "errors" in error
+          ? ((error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.longMessage ??
+            (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.message)
+          : null;
+      toast.error(message || "Invalid verification code. Please try again.");
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 space-y-2">
+      <Button
+        onClick={sendEmailVerificationLink}
+        variant="link"
+        className="h-auto p-0 text-primary"
+        disabled={sendingVerification}
+      >
+        {sendingVerification ? (
+          <>
+            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            Sending verification email...
+          </>
+        ) : (
+          <>
+            <Send className="mr-2 h-3.5 w-3.5" />
+            Send verification email
+          </>
+        )}
+      </Button>
+
+      {showCodeInput && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            value={verificationCode}
+            onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="Enter 6-digit code"
+            inputMode="numeric"
+            className="max-w-[220px]"
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={verifyEmailCode}
+            disabled={verifyingCode || verificationCode.length !== 6}
+          >
+            {verifyingCode ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Verify code"
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

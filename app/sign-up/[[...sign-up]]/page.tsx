@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthUnavailableState } from "@/components/auth/auth-unavailable-state";
+import { GoogleIcon } from "@/components/auth/google-icon";
 import { hasClerkPublishableKey } from "@/lib/config";
 import Link from "next/link";
 import { Building2 } from "lucide-react";
@@ -49,6 +50,22 @@ export default function SignUpPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <Clerk.Connection name="google" asChild>
+                        <Button variant="outline" className="w-full h-11 gap-2" disabled={isGlobalLoading}>
+                          <GoogleIcon />
+                          Continue with Google
+                        </Button>
+                      </Clerk.Connection>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-card px-2 text-muted-foreground">Or create with email</span>
+                        </div>
+                      </div>
+
                       {/* Email and optional password fields */}
                       <Clerk.Field name="emailAddress" className="space-y-2">
                         <Clerk.Label asChild>

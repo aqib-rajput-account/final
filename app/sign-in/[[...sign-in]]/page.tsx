@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthUnavailableState } from "@/components/auth/auth-unavailable-state";
+import { GoogleIcon } from "@/components/auth/google-icon";
 import { hasClerkPublishableKey } from "@/lib/config";
 import Link from "next/link";
 import { Building2 } from "lucide-react";
@@ -49,6 +50,22 @@ export default function SignInPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <Clerk.Connection name="google" asChild>
+                        <Button variant="outline" className="w-full h-11 gap-2">
+                          <GoogleIcon />
+                          Continue with Google
+                        </Button>
+                      </Clerk.Connection>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+                        </div>
+                      </div>
+
                       {/* Email Field */}
                       <Clerk.Field name="identifier" className="space-y-2">
                         <Clerk.Label asChild>
@@ -99,11 +116,12 @@ export default function SignInPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <SignIn.SupportedStrategy name="email_code" asChild>
-                        <Button variant="outline" className="w-full h-11">
-                          Email code
+                      <Clerk.Connection name="google" asChild>
+                        <Button variant="outline" className="w-full h-11 gap-2">
+                          <GoogleIcon />
+                          Google
                         </Button>
-                      </SignIn.SupportedStrategy>
+                      </Clerk.Connection>
                       <SignIn.SupportedStrategy name="password" asChild>
                         <Button variant="outline" className="w-full h-11">
                           Password
@@ -171,64 +189,6 @@ export default function SignInPage() {
                     </Card>
                   </SignIn.Strategy>
 
-                  <SignIn.Strategy name="email_code">
-                    <Card className="shadow-lg">
-                      <CardHeader className="space-y-1 pb-4">
-                        <CardTitle className="text-xl">Check your email</CardTitle>
-                        <CardDescription>
-                          We sent a verification code to your email
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <Clerk.Field name="code" className="space-y-2">
-                          <Clerk.Label asChild>
-                            <Label>Verification code</Label>
-                          </Clerk.Label>
-                          <Clerk.Input type="otp" required asChild>
-                            <Input placeholder="Enter 6-digit code" className="text-center tracking-widest" />
-                          </Clerk.Input>
-                          <Clerk.FieldError className="text-sm text-destructive" />
-                        </Clerk.Field>
-
-                        <Clerk.GlobalError className="text-sm text-destructive" />
-
-                        <SignIn.Action submit asChild>
-                          <Button className="w-full h-11" disabled={isGlobalLoading}>
-                            <Clerk.Loading>
-                              {(isLoading) =>
-                                isLoading ? (
-                                  <Spinner className="h-4 w-4" />
-                                ) : (
-                                  "Verify"
-                                )
-                              }
-                            </Clerk.Loading>
-                          </Button>
-                        </SignIn.Action>
-
-                        <SignIn.Action
-                          resend
-                          asChild
-                          fallback={({ resendableAfter }) => (
-                            <p className="text-center text-sm text-muted-foreground">
-                              Resend code in {resendableAfter} seconds
-                            </p>
-                          )}
-                        >
-                          <Button variant="link" className="w-full" disabled={isGlobalLoading}>
-                            Resend code
-                          </Button>
-                        </SignIn.Action>
-                      </CardContent>
-                      <CardFooter>
-                        <SignIn.Action navigate="previous" asChild>
-                          <Button variant="ghost" className="w-full">
-                            Use another method
-                          </Button>
-                        </SignIn.Action>
-                      </CardFooter>
-                    </Card>
-                  </SignIn.Strategy>
                 </SignIn.Step>
 
                 <SignIn.Step name="forgot-password">
@@ -236,7 +196,7 @@ export default function SignInPage() {
                     <CardHeader className="space-y-1 pb-4">
                       <CardTitle className="text-xl">Reset your password</CardTitle>
                       <CardDescription>
-                        We&apos;ll send you a code to reset your password
+                        We&apos;ll send you an email to reset your password
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -247,7 +207,7 @@ export default function SignInPage() {
                               isLoading ? (
                                 <Spinner className="h-4 w-4" />
                               ) : (
-                                "Send reset code"
+                                "Send reset email"
                               )
                             }
                           </Clerk.Loading>

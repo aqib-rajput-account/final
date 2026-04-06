@@ -26,7 +26,19 @@ This is a Connect Mosque Project of our Community.
    - Allowed origins / redirect URLs: add your deployed domain (for example `https://your-app.vercel.app`)
    - Use production Clerk keys for production deployments (avoid `pk_test_*` on live domains)
 
-4. **Run the app**
+4. **Configure sign-in / sign-up methods in Clerk**
+   - Go to **Clerk Dashboard → User & Authentication → Email, Phone, Username**:
+     - Enable **Email address**
+     - Enable **Email verification code** for sign-up and sign-in
+     - (Optional) Keep password enabled if you want email+password login too
+   - Go to **Clerk Dashboard → SSO Connections / Social Connections**:
+     - Enable **Google**
+     - Add your Google OAuth Client ID/Secret in Clerk
+   - Go to **Clerk Dashboard → Emails**:
+     - Configure your sender/domain so verification codes are delivered reliably.
+     - Verify DNS records for your sending domain if you use a custom domain.
+
+5. **Run the app**
    ```bash
    pnpm dev
    ```
@@ -57,7 +69,7 @@ This ensures Clerk users are upserted into Supabase `profiles` even if webhook d
 - If you see browser CORS errors redirecting to `*.accounts.dev`, verify:
   - Your app is using the correct Clerk environment keys for that deployment.
   - Your deployment URL is added in Clerk allowed origins/redirects.
-- If social sign-in is needed, enable that provider in Clerk Dashboard before adding social buttons in UI.
+- If Google sign-in button is not shown, confirm Google is enabled in Clerk for the same instance (development vs production).
 - If sign-up says your password was found in a data breach, either use a new unique password or leave password empty to continue with email-code verification.
 
 ## Release scope for merge to `main`
