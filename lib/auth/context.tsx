@@ -5,6 +5,7 @@ import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/nextjs";
 import { createClient } from "@/lib/supabase/client";
 import { hasFullAuthConfig } from "@/lib/config";
 import { normalizeClerkRole } from "./clerk-rbac";
+import { hasClerkPublishableKey, hasSupabaseBrowserEnv } from "@/lib/config";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
