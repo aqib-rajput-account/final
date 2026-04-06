@@ -32,7 +32,6 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
 import { usePresence } from '@/lib/hooks/use-realtime'
 import { useRealtimeGateway } from '@/lib/hooks/use-realtime-gateway'
@@ -139,7 +138,7 @@ function UserCard({ user: member, isOnline = false }: { user: any; isOnline?: bo
 }
 
 export function EnhancedSocialFeed() {
-  const { userId, profile } = useAuth()
+  const { userId, profile, resolvedRole } = useAuth()
   const [newPostContent, setNewPostContent] = useState('')
   const [newPostImage, setNewPostImage] = useState<string | null>(null)
   const [isPosting, setIsPosting] = useState(false)
@@ -149,6 +148,7 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
+  const [hasPendingRealtimeRefresh, setHasPendingRealtimeRefresh] = useState(false)
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -171,7 +171,10 @@ export function EnhancedSocialFeed() {
     isValidating: feedValidating,
   } = useSWRInfinite<FeedPage>(getKey, fetcher, {
     revalidateFirstPage: false,
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    persistSize: true,
+    revalidateAll: false,
     dedupingInterval: 3000,
   })
 
@@ -203,8 +206,17 @@ export function EnhancedSocialFeed() {
     const byId = new Map<string, any>()
     onlineUsers.forEach((member: any) => byId.set(member.id, member))
     members.filter((member: any) => realtimeOnlineIds.has(member.id)).forEach((member: any) => byId.set(member.id, member))
+    if (userId && (realtimeOnlineIds.has(userId) || onlineUsers.some((member: any) => member.id === userId))) {
+      byId.set(userId, {
+        id: userId,
+        full_name: profile?.full_name || 'You',
+        avatar_url: profile?.avatar_url || null,
+        profession: (profile as any)?.profession || null,
+        role: resolvedRole || profile?.role || 'member',
+      })
+    }
     return Array.from(byId.values())
-  }, [members, onlineUsers, realtimeOnlineIds])
+  }, [members, onlineUsers, profile, realtimeOnlineIds, resolvedRole, userId])
 
   const patchFeed = useCallback((fn: (post: FeedPost) => FeedPost) => {
     mutateFeed((pages) => {
@@ -235,7 +247,7 @@ export function EnhancedSocialFeed() {
     }
 
     if (event.eventType === 'post.created' || event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
-      mutateFeed()
+      setHasPendingRealtimeRefresh(true)
       return
     }
 
@@ -243,7 +255,12 @@ export function EnhancedSocialFeed() {
       mutateMembers()
       mutateOnlineUsers()
     }
-  }, [mutateFeed, mutateMembers, mutateOnlineUsers, patchFeed])
+  }, [mutateMembers, mutateOnlineUsers, patchFeed])
+
+  const refreshFeedPosts = useCallback(async () => {
+    await mutateFeed()
+    setHasPendingRealtimeRefresh(false)
+  }, [mutateFeed])
 
   useEffect(() => {
     const returnContext = resolveFeedReturnContext()
@@ -300,8 +317,14 @@ export function EnhancedSocialFeed() {
       formData.append('file', file)
       const response = await fetch('/api/upload', { method: 'POST', body: formData })
       if (!response.ok) throw new Error('Upload failed')
-      const { pathname } = await response.json()
-      setNewPostImage(`/api/file?pathname=${encodeURIComponent(pathname)}`)
+      const { url, pathname } = await response.json()
+      const imageUrl = typeof url === 'string' && url.length > 0
+        ? url
+        : pathname
+          ? `/api/file?pathname=${encodeURIComponent(pathname)}`
+          : null
+      if (!imageUrl) throw new Error('Upload completed but no image URL was returned')
+      setNewPostImage(imageUrl)
       toast.success('Image uploaded')
     } catch (error: any) {
       toast.error(error.message || 'Failed to upload image')
@@ -493,7 +516,7 @@ export function EnhancedSocialFeed() {
               </Avatar>
               <h3 className="font-semibold text-lg">{profile?.full_name || 'Welcome!'}</h3>
               <p className="text-sm text-muted-foreground mb-2">{(profile as any)?.profession || 'Community Member'}</p>
-              <Badge variant="secondary" className="capitalize">{profile?.role || 'member'}</Badge>
+              <Badge variant="secondary" className="capitalize">{resolvedRole || profile?.role || 'member'}</Badge>
               <div className="w-full mt-6 pt-4 border-t space-y-2">
                 <Link href="/profile" className="block"><Button variant="outline" className="w-full" size="sm">View Profile</Button></Link>
                 <Link href="/settings" className="block"><Button variant="ghost" className="w-full" size="sm">Settings</Button></Link>
@@ -515,7 +538,7 @@ export function EnhancedSocialFeed() {
                 <Textarea placeholder="Share an update… use @name for mentions" value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] resize-none" />
                 {newPostImage && (
                   <div className="relative inline-block">
-                    <Image src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
+                    <img src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
                     <Button size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setNewPostImage(null)}>
                       <X className="h-3 w-3" />
                     </Button>
@@ -537,7 +560,19 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
+          {(feedValidating || hasPendingRealtimeRefresh) && (
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
+              <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+            </div>
+          )}
+          {hasPendingRealtimeRefresh && (
+            <div className="flex justify-center">
+              <Button variant="secondary" size="sm" onClick={() => { void refreshFeedPosts() }}>
+                Show new posts
+              </Button>
+            </div>
+          )}
           {feedLoading ? (
             <>
               <PostSkeleton />
@@ -701,8 +736,8 @@ function PostCard({
         )}
 
         {post.image_url && (
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden">
-            <Image src={post.image_url} alt="Post image" fill className="object-cover" />
+          <div className="w-full aspect-video rounded-lg overflow-hidden">
+            <img src={post.image_url} alt="Post image" className="h-full w-full object-cover" />
           </div>
         )}
 

@@ -1,6 +1,8 @@
-export type AppRole = "admin" | "shura" | "imam" | "member";
+export type AppRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
 const CLERK_ROLE_TO_APP_ROLE: Record<string, AppRole> = {
+  "org:super_admin": "super_admin",
+  super_admin: "super_admin",
   "org:admin": "admin",
   admin: "admin",
   "org:shura": "shura",
@@ -15,19 +17,19 @@ export function normalizeClerkRole(orgRole: string | null | undefined): AppRole 
 }
 
 export function canAccessAdminPanel(role: AppRole): boolean {
-  return role === "admin";
+  return role === "admin" || role === "super_admin";
 }
 
 export function canAccessShuraPanel(role: AppRole): boolean {
-  return role === "admin" || role === "shura";
+  return role === "admin" || role === "super_admin" || role === "shura";
 }
 
 export function canManageAllMosques(role: AppRole): boolean {
-  return role === "admin" || role === "shura";
+  return role === "admin" || role === "super_admin" || role === "shura";
 }
 
 export function canManageImams(role: AppRole): boolean {
-  return role === "admin" || role === "shura";
+  return role === "admin" || role === "super_admin" || role === "shura";
 }
 
 export function canManageMosque(args: {
