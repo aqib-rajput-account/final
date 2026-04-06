@@ -5,7 +5,7 @@ import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { buildCacheKey, deleteCachedValue, getCachedValue, hashCacheKey, setCachedValue } from '@/lib/infrastructure/cache'
 import { enqueueWork } from '@/lib/infrastructure/queue'
-import { enforceRateLimit } from '@/lib/infrastructure/rate-limit'
+import { enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
+    const hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
 
     let query = supabase
       .from('posts')
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         post_type,
         category,
         metadata,
+        visibility,
         is_published,
         created_at,
         updated_at,
@@ -69,6 +71,7 @@ export async function GET(request: Request) {
         { count: 'exact' }
       )
       .eq('is_published', true)
+      .in('visibility', ['public', 'followers'])
       .order('created_at', { ascending: false })
 
     if (cursor) {
@@ -84,11 +87,13 @@ export async function GET(request: Request) {
     }
 
     const formattedPosts =
-      posts?.map((post: any) => ({
-        ...post,
-        likes_count: post.post_likes?.[0]?.count || 0,
-        comments_count: post.post_comments?.[0]?.count || 0,
-      })) || []
+      posts
+        ?.filter((post: any) => !hiddenUsers.has(post.author_id))
+        .map((post: any) => ({
+          ...post,
+          likes_count: post.post_likes?.[0]?.count || 0,
+          comments_count: post.post_comments?.[0]?.count || 0,
+        })) || []
 
     const postIds = formattedPosts.map((p: any) => p.id)
     let userLikes: string[] = []
@@ -112,8 +117,7 @@ export async function GET(request: Request) {
       userBookmarks = bookmarks?.map((b) => b.post_id) || []
     }
 
-    const nextCursor =
-      formattedPosts.length === limit ? formattedPosts[formattedPosts.length - 1]?.created_at ?? null : null
+    const nextCursor = formattedPosts.length === limit ? formattedPosts[formattedPosts.length - 1]?.created_at ?? null : null
 
     const responsePayload = {
       data: formattedPosts,
@@ -145,36 +149,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const rateLimit = await enforceRateLimit({
-      namespace: 'feed-write',
-      identifier: userId,
+    const throttle = await enforceMultiScopeThrottle({
+      request,
+      userId,
+      action: 'post-create',
       windowSeconds: 60,
-      maxRequests: 15,
+      accountLimit: 15,
+      ipLimit: 60,
+      deviceLimit: 45,
     })
 
-    if (!rateLimit.allowed) {
+    if (!throttle.allowed) {
       return NextResponse.json(
         {
           error: 'Rate limit exceeded',
-          retryAfterSeconds: rateLimit.retryAfterSeconds,
+          retryAfterSeconds: throttle.retryAfterSeconds,
         },
         {
           status: 429,
           headers: {
-            'Retry-After': String(rateLimit.retryAfterSeconds),
-            'X-RateLimit-Limit': String(rateLimit.limit),
-            'X-RateLimit-Remaining': String(rateLimit.remaining),
+            'Retry-After': String(throttle.retryAfterSeconds),
           },
         }
       )
     }
 
     const body = await request.json()
-    const { content, image_url, post_type, category, metadata, mosque_id, is_published } = body
+    const { content, image_url, post_type, category, metadata, mosque_id, is_published, visibility } = body
 
     if (!content || String(content).trim().length === 0) {
       return NextResponse.json({ error: 'Post content is required' }, { status: 400 })
     }
+
+    const safeVisibility = visibility === 'private' || visibility === 'followers' ? visibility : 'public'
 
     const { data: post, error } = await supabase
       .from('posts')
@@ -187,6 +194,7 @@ export async function POST(request: Request) {
         metadata: metadata ?? {},
         mosque_id: mosque_id ?? null,
         is_published: is_published ?? true,
+        visibility: safeVisibility,
       })
       .select('*')
       .single()
@@ -202,10 +210,11 @@ export async function POST(request: Request) {
       entityId: String(post.id),
       actorUserId: userId,
       idempotencyKey,
-      feedStreamId: 'home',
+      feedStreamId: safeVisibility === 'private' ? undefined : 'home',
       payload: {
         postId: post.id,
         authorId: userId,
+        visibility: safeVisibility,
       },
     })
 
@@ -238,7 +247,7 @@ export async function POST(request: Request) {
 
     await deleteCachedValue('timeline', hashCacheKey(buildCacheKey([userId, 20, 0, null])))
 
-    return NextResponse.json({ post, actor_user_id: userId }, { status: 201 })
+    return NextResponse.json({ post }, { status: 201 })
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

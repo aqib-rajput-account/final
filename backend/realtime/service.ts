@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { PublishRealtimeEventInput, RealtimeEventEnvelope } from './types'
 import { REALTIME_EVENT_VERSION } from './types'
+import { getMutedAndBlockedUserIds } from '@/backend/safety/service'
 
 export function buildRealtimeChannels(input: { targetUserIds?: string[]; feedStreamId?: string }): string[] {
   const channels = new Set<string>()
@@ -14,6 +15,12 @@ export function buildRealtimeChannels(input: { targetUserIds?: string[]; feedStr
   }
 
   return [...channels]
+}
+
+async function filterTargetUserIdsForActor(actorUserId: string, targetUserIds: string[]) {
+  const supabase = await createClient()
+  const hiddenIds = await getMutedAndBlockedUserIds(supabase, actorUserId)
+  return targetUserIds.filter((id) => id && !hiddenIds.has(id))
 }
 
 async function broadcastToChannels(envelope: RealtimeEventEnvelope): Promise<void> {
@@ -39,8 +46,9 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
   input: PublishRealtimeEventInput<TPayload>
 ): Promise<RealtimeEventEnvelope<TPayload>> {
   const supabase = await createClient()
+  const filteredTargetUserIds = await filterTargetUserIdsForActor(input.actorUserId, input.targetUserIds ?? [])
   const channels = buildRealtimeChannels({
-    targetUserIds: [input.actorUserId, ...(input.targetUserIds ?? [])],
+    targetUserIds: [input.actorUserId, ...filteredTargetUserIds],
     feedStreamId: input.feedStreamId,
   })
 
@@ -57,25 +65,14 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
     channels,
   }
 
-  const { data, error } = await supabase
-    .from('realtime_events')
-    .insert(insertPayload)
-    .select('*')
-    .single()
+  const { data, error } = await supabase.from('realtime_events').insert(insertPayload).select('*').single()
 
   if (error && error.code !== '23505') {
     throw error
   }
 
   const persisted =
-    data ??
-    (
-      await supabase
-        .from('realtime_events')
-        .select('*')
-        .eq('idempotency_key', input.idempotencyKey)
-        .single()
-    ).data
+    data ?? (await supabase.from('realtime_events').select('*').eq('idempotency_key', input.idempotencyKey).single()).data
 
   if (!persisted) {
     throw new Error('Failed to persist realtime event')
@@ -133,16 +130,29 @@ export async function listRealtimeEventsSince(input: {
     throw error
   }
 
-  return (data ?? []).map((event) => ({
-    eventId: event.event_id,
-    version: event.version,
-    eventType: event.event_type,
-    entityType: event.entity_type,
-    entityId: event.entity_id,
-    actorUserId: event.actor_user_id,
-    occurredAt: event.occurred_at,
-    idempotencyKey: event.idempotency_key,
-    channels: event.channels ?? [],
-    payload: (event.payload ?? {}) as Record<string, unknown>,
-  }))
+  const hiddenUserIds = await getMutedAndBlockedUserIds(supabase, input.userId)
+
+  return (data ?? [])
+    .filter((event) => {
+      if (hiddenUserIds.has(event.actor_user_id)) return false
+
+      const payloadAuthorId = event.payload?.authorId
+      if (typeof payloadAuthorId === 'string' && hiddenUserIds.has(payloadAuthorId)) {
+        return false
+      }
+
+      return true
+    })
+    .map((event) => ({
+      eventId: event.event_id,
+      version: event.version,
+      eventType: event.event_type,
+      entityType: event.entity_type,
+      entityId: event.entity_id,
+      actorUserId: event.actor_user_id,
+      occurredAt: event.occurred_at,
+      idempotencyKey: event.idempotency_key,
+      channels: event.channels ?? [],
+      payload: (event.payload ?? {}) as Record<string, unknown>,
+    }))
 }
