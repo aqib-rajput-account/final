@@ -257,7 +257,7 @@ export function EnhancedSocialFeed() {
     const qs = params.toString()
     return qs ? `/api/users/community?${qs}` : '/api/users/community'
   }, [userId, debouncedSearch])
-  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher, { keepPreviousData: true })
+  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher, { keepPreviousData: true, revalidateOnFocus: false })
 
   const lastStablePosts = useRef<FeedPost[]>([])
   const posts = useMemo(() => {
@@ -279,17 +279,39 @@ export function EnhancedSocialFeed() {
     }
     return allPosts
   }, [feedPages, postSearchQuery])
+  
+  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userLikes) ?? []), [feedPages])
+  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userBookmarks) ?? []), [feedPages])
 
-  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
-  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
-  const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
-  const isLoadingMore = feedValidating && size > 0
+  const lastStableOnlineUsers = useRef<any[]>([])
+  const lastStableMembers = useRef<any[]>([])
+  const lastStableDiscovery = useRef<any[]>([])
 
-  const onlineUsers = (onlineUsersData as any)?.data || []
-  const members = (membersData as any)?.data || []
-  const discoverySuggestions = (discoveryData as any)?.data || []
+  const onlineUsers = useMemo(() => {
+    const data = (onlineUsersData as any)?.data
+    if (!data && lastStableOnlineUsers.current.length > 0) return lastStableOnlineUsers.current
+    if (data) lastStableOnlineUsers.current = data
+    return data || []
+  }, [onlineUsersData])
+
+  const members = useMemo(() => {
+    const data = (membersData as any)?.data
+    if (!data && lastStableMembers.current.length > 0) return lastStableMembers.current
+    if (data) lastStableMembers.current = data
+    return data || []
+  }, [membersData])
+
+  const discoverySuggestions = useMemo(() => {
+    const data = (discoveryData as any)?.data
+    if (!data && lastStableDiscovery.current.length > 0) return lastStableDiscovery.current
+    if (data) lastStableDiscovery.current = data
+    return data || []
+  }, [discoveryData])
 
   const realtimeOnlineIds = useMemo(() => new Set(Object.keys(realtimeOnline)), [realtimeOnline])
+
+  const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
+  const isLoadingMore = feedValidating && feedPages && feedPages.length === size && hasMore
 
   const mergedOnlineUsers = useMemo(() => {
     const byId = new Map<string, any>()
@@ -780,11 +802,7 @@ export function EnhancedSocialFeed() {
 
         {/* Post list */}
         <div className="space-y-4 relative">
-          {feedValidating && (
-            <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
-              <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
-            </div>
-          )}
+          {/* Refresh indicator removed to eliminate blinking feel during background updates */}
 
           {/* New posts banner — prepends without resetting scroll */}
           {newPostsCount > 0 && (
