@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import useSWR from 'swr'
 import useSWRInfinite from 'swr/infinite'
 import { useAuth } from '@/lib/auth'
@@ -26,9 +26,10 @@ import {
   Send,
   X,
   Trash2,
-  AtSign,
+  Bookmark,
   Reply,
   Repeat2,
+  ArrowUp,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -75,6 +76,7 @@ interface PostComment {
   content: string
   created_at: string
   author_id: string
+  parent_comment_id?: string | null
   author?: {
     id: string
     full_name: string | null
@@ -149,6 +151,10 @@ export function EnhancedSocialFeed() {
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
   const [hasPendingRealtimeRefresh, setHasPendingRealtimeRefresh] = useState(false)
+  const [newPostsCount, setNewPostsCount] = useState(0)
+  const [mentionSearch, setMentionSearch] = useState('')
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
+  const [postSearchQuery, setPostSearchQuery] = useState('')
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -176,12 +182,23 @@ export function EnhancedSocialFeed() {
     persistSize: true,
     revalidateAll: false,
     dedupingInterval: 3000,
+    refreshInterval: 0, // Disable polling, use real-time
   })
 
   const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
   const { data: membersData, mutate: mutateMembers } = useSWR(userId ? '/api/users/community' : null, fetcher)
 
-  const posts = useMemo(() => feedPages?.flatMap((page) => page.data) ?? [], [feedPages])
+  const posts = useMemo(() => {
+    let allPosts = feedPages?.flatMap((page) => page.data) ?? []
+    if (postSearchQuery.trim()) {
+      const q = postSearchQuery.toLowerCase()
+      return allPosts.filter((p: FeedPost) => 
+        p.content.toLowerCase().includes(q) || 
+        p.profiles?.full_name?.toLowerCase().includes(q)
+      )
+    }
+    return allPosts
+  }, [feedPages, postSearchQuery])
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
@@ -246,7 +263,15 @@ export function EnhancedSocialFeed() {
       return
     }
 
-    if (event.eventType === 'post.created' || event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
+    if (event.eventType === 'post.created') {
+      if (event.actorUserId !== userId) {
+        setNewPostsCount((prev: number) => prev + 1)
+        setHasPendingRealtimeRefresh(true)
+      }
+      return
+    }
+
+    if (event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
       setHasPendingRealtimeRefresh(true)
       return
     }
@@ -260,6 +285,8 @@ export function EnhancedSocialFeed() {
   const refreshFeedPosts = useCallback(async () => {
     await mutateFeed()
     setHasPendingRealtimeRefresh(false)
+    setNewPostsCount(0)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [mutateFeed])
 
   useEffect(() => {
@@ -360,6 +387,30 @@ export function EnhancedSocialFeed() {
     }, false)
   }, [mutateFeed, profile, userId])
 
+  const updatePostContent = useCallback((value: string) => {
+    setNewPostContent(value)
+    const cursorPosition = value.length // Simple implementation, can be improved
+    const textBeforeCursor = value.slice(0, cursorPosition)
+    const lastAtSymbol = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtSymbol !== -1) {
+      const query = textBeforeCursor.slice(lastAtSymbol + 1)
+      if (!query.includes(' ')) {
+        setMentionSearch(query)
+        setShowMentionSuggestions(true)
+        return
+      }
+    }
+    setShowMentionSuggestions(false)
+  }, [])
+
+  const insertMention = useCallback((mentionName: string) => {
+    const lastAtSymbol = newPostContent.lastIndexOf('@')
+    const newValue = newPostContent.slice(0, lastAtSymbol) + '@' + mentionName + ' '
+    setNewPostContent(newValue)
+    setShowMentionSuggestions(false)
+  }, [newPostContent])
+
   const handlePostCreate = useCallback(async (opts?: { asShare?: boolean; sourcePost?: FeedPost | null; contentOverride?: string }) => {
     const content = opts?.contentOverride ?? newPostContent
     if (!userId || !content.trim()) return toast.error('Please write something to post')
@@ -432,7 +483,7 @@ export function EnhancedSocialFeed() {
     }
   }, [mutateFeed, patchFeed, userId])
 
-  const handleCommentCreate = useCallback(async (postId: string, content: string) => {
+  const handleCommentCreate = useCallback(async (postId: string, content: string, parentCommentId?: string) => {
     const trimmed = content.trim()
     if (!trimmed) return
     trackFeedFunnelEvent({
@@ -448,7 +499,7 @@ export function EnhancedSocialFeed() {
       const response = await fetch(`/api/posts/${postId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: trimmed }),
+        body: JSON.stringify({ content: trimmed, parent_comment_id: parentCommentId }),
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to comment')
@@ -527,6 +578,16 @@ export function EnhancedSocialFeed() {
       </aside>
 
       <main className="lg:col-span-6 space-y-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search posts..." 
+            value={postSearchQuery} 
+            onChange={(e) => setPostSearchQuery(e.target.value)} 
+            className="pl-9 bg-background/50 border-muted focus:bg-background transition-colors"
+          />
+        </div>
+
         <Card>
           <CardContent className="p-4">
             <div className="flex gap-3">
@@ -534,8 +595,38 @@ export function EnhancedSocialFeed() {
                 <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || undefined} />
                 <AvatarFallback>{profile?.full_name?.[0] || 'U'}</AvatarFallback>
               </Avatar>
-              <div className="flex-1 space-y-3">
-                <Textarea placeholder="Share an update… use @name for mentions" value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] resize-none" />
+              <div className="flex-1 space-y-3 relative">
+                <Textarea 
+                  placeholder="Share an update… use @name for mentions" 
+                  value={newPostContent} 
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updatePostContent(e.target.value)} 
+                  className="min-h-[80px] resize-none" 
+                />
+                
+                {showMentionSuggestions && (
+                  <Card className="absolute z-50 left-0 right-0 top-full mt-1 shadow-xl border-primary/20 overflow-hidden">
+                    <ScrollArea className="max-h-[200px]">
+                      <div className="p-1">
+                        {members.filter((m: any) => 
+                          (m.full_name || '').toLowerCase().includes(mentionSearch.toLowerCase())
+                        ).slice(0, 5).map((m: any) => (
+                          <button
+                            key={m.id}
+                            className="w-full flex items-center gap-2 p-2 hover:bg-muted text-left text-sm rounded-md transition-colors"
+                            onClick={() => insertMention(m.full_name || 'member')}
+                          >
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={m.avatar_url} />
+                              <AvatarFallback>{(m.full_name || 'U')[0]}</AvatarFallback>
+                            </Avatar>
+                            <span className="font-medium">{m.full_name}</span>
+                            <span className="text-xs text-muted-foreground">@{m.id.slice(0, 4)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </Card>
+                )}
                 {newPostImage && (
                   <div className="relative inline-block">
                     <img src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
@@ -566,10 +657,16 @@ export function EnhancedSocialFeed() {
               <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
             </div>
           )}
-          {hasPendingRealtimeRefresh && (
-            <div className="flex justify-center">
-              <Button variant="secondary" size="sm" onClick={() => { void refreshFeedPosts() }}>
-                Show new posts
+          {newPostsCount > 0 && (
+            <div className="sticky top-20 z-20 flex justify-center animate-in fade-in slide-in-from-top-4 duration-300">
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="rounded-full shadow-lg bg-primary text-primary-foreground font-medium px-6 py-5 gap-2 border-none"
+                onClick={() => { void refreshFeedPosts() }}
+              >
+                <ArrowUp className="h-4 w-4" />
+                {newPostsCount} new {newPostsCount === 1 ? 'post' : 'posts'} available
               </Button>
             </div>
           )}
@@ -668,12 +765,13 @@ function PostCard({
   onLike: () => void
   onBookmark: () => void
   onDelete: () => void
-  onComment: (postId: string, content: string) => Promise<void>
+  onComment: (postId: string, content: string, parentCommentId?: string) => Promise<void>
   onOpenShare: () => void
 }) {
   const [showComments, setShowComments] = useState(false)
   const [commentInput, setCommentInput] = useState('')
   const [replyPrefix, setReplyPrefix] = useState('')
+  const [replyToId, setReplyToId] = useState<string | null>(null)
 
   const { data: commentsResponse, mutate: mutateComments } = useSWR<{ comments: PostComment[] }>(
     showComments ? `/api/posts/${post.id}/comments` : null,
@@ -698,7 +796,9 @@ function PostCard({
     mutateComments((current) => ({ comments: [...(current?.comments ?? []), optimisticComment] }), false)
     setCommentInput('')
     setReplyPrefix('')
-    await onComment(post.id, payload)
+    const targetParentId = replyToId
+    setReplyToId(null)
+    await onComment(post.id, payload, targetParentId || undefined)
     mutateComments()
   }
 
@@ -747,34 +847,107 @@ function PostCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="ghost" size="sm" className={cn('gap-2', isLiked && 'text-red-500')} onClick={onLike}><Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />Like</Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={cn('gap-2 group transition-all active:scale-95', isLiked && 'text-red-500')} 
+            onClick={onLike}
+          >
+            <Heart className={cn('h-4 w-4 transition-transform group-hover:scale-110', isLiked && 'fill-current animate-in zoom-in-50')} />
+            Like
+          </Button>
           <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowComments((v) => !v)}><MessageCircle className="h-4 w-4" />Comment</Button>
           <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}><Share2 className="h-4 w-4" />Share</Button>
-          <Button variant="ghost" size="sm" className={cn('gap-2', isBookmarked && 'text-primary')} onClick={onBookmark}><AtSign className="h-4 w-4" />Mention</Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={cn('gap-2', isBookmarked && 'text-primary')} 
+            onClick={onBookmark}
+          >
+            <Bookmark className={cn('h-4 w-4', isBookmarked && 'fill-current')} />
+            Bookmark
+          </Button>
         </div>
 
         {showComments && (
           <div className="space-y-3 border-t pt-3">
             {replyPrefix && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground"><Reply className="h-3.5 w-3.5" /><span>Replying with prefix: <strong>{replyPrefix}</strong></span><Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setReplyPrefix('')}>Clear</Button></div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Reply className="h-3.5 w-3.5" />
+                <span>Replying to <strong>{replyPrefix.trim()}</strong></span>
+                <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => { setReplyPrefix(''); setReplyToId(null); }}>Clear</Button>
+              </div>
             )}
             <div className="flex gap-2">
               <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Comment… use @name and hit Enter" onKeyDown={(e) => e.key === 'Enter' && submitComment()} />
               <Button onClick={submitComment} disabled={!commentInput.trim()}><Send className="h-4 w-4" /></Button>
             </div>
 
-            {comments.map((comment) => (
-              <div key={comment.id} className="rounded-md bg-muted/40 p-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <Link href={`/profile/${comment.author_id}`} className="text-xs font-medium hover:underline">{comment.author?.full_name || 'Member'}</Link>
-                  <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setReplyPrefix(`@${comment.author?.full_name || 'member'} `)}>Reply</button>
-                </div>
-                <p className="text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
-              </div>
+            {comments.filter((c: PostComment) => !c.parent_comment_id).map((comment: PostComment) => (
+              <CommentItem 
+                key={comment.id} 
+                comment={comment} 
+                allComments={comments} 
+                onReply={(prefix, parentId) => {
+                  setReplyPrefix(prefix)
+                  setReplyToId(parentId)
+                  setCommentInput('')
+                }}
+              />
             ))}
           </div>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function CommentItem({ 
+  comment, 
+  allComments, 
+  onReply 
+}: { 
+  comment: any; 
+  allComments: any[]; 
+  onReply: (prefix: string, parentId: string) => void 
+}) {
+  const replies = allComments.filter(c => c.parent_comment_id === comment.id)
+
+  return (
+    <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200 mt-3">
+      <div className="group rounded-md bg-muted/40 p-3 hover:bg-muted/60 transition-colors border border-transparent hover:border-primary/10 shadow-sm">
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <div className="flex items-center gap-2">
+            <Avatar className="h-5 w-5">
+              <AvatarImage src={comment.author?.avatar_url} />
+              <AvatarFallback className="text-[10px] bg-primary/10">{comment.author?.full_name?.[0] || 'U'}</AvatarFallback>
+            </Avatar>
+            <Link href={`/profile/${comment.author_id}`} className="text-xs font-semibold hover:underline">
+              {comment.author?.full_name || 'Member'}
+            </Link>
+          </div>
+          <button 
+            className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-medium opacity-0 group-hover:opacity-100" 
+            onClick={() => onReply(`@${comment.author?.full_name || 'member'} `, comment.id)}
+          >
+            Reply
+          </button>
+        </div>
+        <p className="text-sm pl-7 whitespace-pre-wrap leading-relaxed">{comment.content}</p>
+      </div>
+      
+      {replies.length > 0 && (
+        <div className="pl-6 space-y-3 border-l-2 border-muted/50 ml-2.5">
+          {replies.map(reply => (
+            <CommentItem 
+              key={reply.id} 
+              comment={reply} 
+              allComments={allComments} 
+              onReply={onReply} 
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

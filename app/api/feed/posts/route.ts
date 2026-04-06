@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       .select(
         `
         id,
-        content,
+        body,
         image_url,
         post_type,
         category,
@@ -78,15 +78,15 @@ export async function GET(request: Request) {
         updated_at,
         author_id,
         mosque_id,
+        like_count,
+        comment_count,
         profiles:author_id(
           id,
           full_name,
           avatar_url,
           profession,
           role
-        ),
-        post_likes(count),
-        post_comments(count)
+        )
       `,
         { count: 'exact' }
       )
@@ -118,8 +118,9 @@ export async function GET(request: Request) {
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
         .map((post: any) => ({
           ...post,
-          likes_count: post.post_likes?.[0]?.count || 0,
-          comments_count: post.post_comments?.[0]?.count || 0,
+          content: post.body, // Map DB 'body' to API 'content' for frontend compatibility
+          likes_count: post.like_count || 0,
+          comments_count: post.comment_count || 0,
         })) || []
 
     const postIds = formattedPosts.map((p: any) => p.id)
@@ -128,10 +129,11 @@ export async function GET(request: Request) {
 
     if (postIds.length > 0) {
       const { data: likes } = await supabase
-        .from('post_likes')
+        .from('reactions') // Use 'reactions' as per migration
         .select('post_id')
         .in('post_id', postIds)
         .eq('user_id', userId)
+        .eq('reaction_type', 'like')
 
       userLikes = likes?.map((l) => l.post_id) || []
 
@@ -259,7 +261,7 @@ export async function POST(request: Request) {
       .from('posts')
       .insert({
         author_id: userId,
-        content: String(content).trim(),
+        body: String(content).trim(), // Map frontend 'content' to DB 'body'
         image_url: image_url ?? null,
         post_type: post_type ?? 'text',
         category: category ?? 'general',
@@ -267,6 +269,8 @@ export async function POST(request: Request) {
         mosque_id: mosque_id ?? null,
         is_published: is_published ?? true,
         visibility: safeVisibility,
+        like_count: 0,
+        comment_count: 0,
       })
       .select('*')
       .single()

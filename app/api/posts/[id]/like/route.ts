@@ -38,19 +38,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const { data: existingLike } = await supabase
-      .from('post_likes')
+      .from('reactions')
       .select('id')
       .eq('post_id', postId)
       .eq('user_id', userId)
-      .single()
+      .eq('reaction_type', 'like')
+      .maybeSingle()
 
     if (existingLike) {
       return NextResponse.json({ error: 'Already liked' }, { status: 400 })
     }
 
-    const { error: likeError } = await supabase.from('post_likes').insert({
+    const { error: likeError } = await supabase.from('reactions').insert({
       post_id: postId,
       user_id: userId,
+      reaction_type: 'like'
     })
 
     if (likeError) {
@@ -105,7 +107,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       )
     }
 
-    const { error } = await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', userId)
+    const { error } = await supabase
+      .from('reactions')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+      .eq('reaction_type', 'like')
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

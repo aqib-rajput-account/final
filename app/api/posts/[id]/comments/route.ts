@@ -12,8 +12,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const supabase = await createClient()
     const userId = await resolveAuthenticatedUserId(request)
 
-    const { data: comments, error } = await supabase
-      .from('post_comments')
+    const { data: rawComments, error } = await supabase
+      .from('comments')
       .select(`
         *,
         author:profiles!author_id(id, full_name, avatar_url, role)
@@ -24,6 +24,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    const comments = rawComments?.map((c: any) => ({
+      ...c,
+      content: c.body, // Map DB 'body' to API 'content' for frontend compatibility
+    }))
 
     if (!userId) {
       return NextResponse.json({ comments: comments ?? [] })
@@ -71,18 +76,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const body = await request.json()
-    const { content } = body
+    const { content, parent_comment_id } = body
 
     if (!content || content.trim().length === 0) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 })
     }
 
     const { data: comment, error } = await supabase
-      .from('post_comments')
+      .from('comments')
       .insert({
         post_id: postId,
         author_id: userId,
-        content: content.trim(),
+        body: content.trim(),
+        parent_comment_id: parent_comment_id || null,
       })
       .select(`
         *,
