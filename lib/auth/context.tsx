@@ -5,6 +5,7 @@ import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/nextjs";
 import { createClient } from "@/lib/supabase/client";
 import { hasClerkPublishableKey, hasFullAuthConfig, hasSupabaseBrowserEnv } from "@/lib/config";
 import { normalizeClerkRole } from "./clerk-rbac";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -148,6 +149,31 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => clearInterval(interval);
   }, [isSignedIn, user?.id]);
+
+  useEffect(() => {
+    if (!supabase || !isSignedIn || !user?.id) return;
+
+    const channel = supabase
+      .channel(`profile-sync-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${user.id}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Profile>) => {
+          if (!payload.new) return;
+          setProfile(payload.new as Profile);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isSignedIn, supabase, user?.id]);
 
   const signOut = async () => {
     await clerkSignOut();
