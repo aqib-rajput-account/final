@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { createClient } from "@/lib/supabase/client";
-import { hasFullAuthConfig } from "@/lib/config";
+import { hasClerkPublishableKey, hasSupabaseBrowserEnv } from "@/lib/config";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -53,7 +53,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  if (!hasFullAuthConfig) {
+  if (!hasClerkPublishableKey) {
     return <FallbackAuthProvider>{children}</FallbackAuthProvider>;
   }
 
@@ -64,8 +64,12 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoaded: isClerkLoaded, isSignedIn } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(hasSupabaseBrowserEnv);
   const [{ supabase, supabaseError }] = useState(() => {
+    if (!hasSupabaseBrowserEnv) {
+      return { supabase: null, supabaseError: null as string | null };
+    }
+
     try {
       return { supabase: createClient(), supabaseError: null as string | null };
     } catch (error) {
@@ -76,6 +80,38 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
   });
+
+  const buildFallbackProfile = useCallback((): Profile | null => {
+    if (!user) return null;
+
+    const fullName =
+      [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || null;
+
+    return {
+      id: user.id,
+      email: user.primaryEmailAddress?.emailAddress ?? null,
+      full_name: fullName,
+      username: user.username ?? null,
+      avatar_url: user.imageUrl ?? null,
+      phone: user.primaryPhoneNumber?.phoneNumber ?? null,
+      bio: null,
+      role: "member",
+      mosque_id: null,
+      is_verified: Boolean(user.primaryEmailAddress?.verification?.status === "verified"),
+      is_active: true,
+      created_at: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }, [user]);
+
+  const syncProfile = useCallback(async () => {
+    if (!isSignedIn || !hasSupabaseBrowserEnv) return;
+    try {
+      await fetch("/api/auth/sync-profile", { method: "POST" });
+    } catch (error) {
+      console.error("Error syncing Clerk profile:", error);
+    }
+  }, [isSignedIn]);
 
   const fetchProfile = useCallback(
     async (userId: string) => {
@@ -104,19 +140,32 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {
+      if (!supabase) {
+        setProfile(buildFallbackProfile());
+        return;
+      }
+      await syncProfile();
       const profileData = await fetchProfile(user.id);
-      setProfile(profileData);
+      setProfile(profileData ?? buildFallbackProfile());
     }
-  }, [user?.id, fetchProfile]);
+  }, [user?.id, fetchProfile, supabase, buildFallbackProfile, syncProfile]);
 
   useEffect(() => {
     if (!isClerkLoaded) return;
 
     const loadProfile = async () => {
-      setProfileLoading(true);
+      setProfileLoading(hasSupabaseBrowserEnv);
+
+      if (!hasSupabaseBrowserEnv) {
+        setProfile(isSignedIn ? buildFallbackProfile() : null);
+        setProfileLoading(false);
+        return;
+      }
+
       if (isSignedIn && user?.id) {
+        await syncProfile();
         const profileData = await fetchProfile(user.id);
-        setProfile(profileData);
+        setProfile(profileData ?? buildFallbackProfile());
       } else {
         setProfile(null);
       }
@@ -124,10 +173,10 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     void loadProfile();
-  }, [isClerkLoaded, isSignedIn, user?.id, fetchProfile]);
+  }, [isClerkLoaded, isSignedIn, user?.id, fetchProfile, buildFallbackProfile, syncProfile]);
 
   useEffect(() => {
-    if (!isSignedIn || !user?.id) return;
+    if (!isSignedIn || !user?.id || !hasSupabaseBrowserEnv) return;
 
     const updateStatus = async () => {
       try {
