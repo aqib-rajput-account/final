@@ -1,8 +1,9 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
 import { Header } from "@/components/layout";
-import { Footer } from "@/components/layout";
 import { MessagesView } from "@/components/messages/messages-view";
+import { StreamFeedPanel } from "@/components/messages/stream-feed-panel";
+import { hasStreamFeedConfig } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "Messages | MosqueConnect",
@@ -18,7 +19,7 @@ export default function MessagesPage() {
           <div className="flex-1 flex flex-col py-0 md:py-6">
             <h1 className="sr-only">Messages</h1>
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground italic">Loading your conversations...</div>}>
-              <MessagesView />
+              {hasStreamFeedConfig ? <StreamFeedPanel /> : <MessagesView />}
             </Suspense>
           </div>
         </div>
@@ -26,4 +27,3 @@ export default function MessagesPage() {
     </div>
   );
 }
-
