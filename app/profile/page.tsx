@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { Header } from "@/components/layout";
 import { Footer } from "@/components/layout";
 import { useAuth } from "@/lib/auth";
@@ -21,12 +22,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, User, Mail, Phone, Shield, Calendar } from "lucide-react";
+import { Loader2, Upload, Mail, Phone, Shield, Calendar } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { user } = useUser();
   const { profile, userId, isSignedIn, loading: authLoading, refreshProfile } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
@@ -56,6 +59,12 @@ export default function ProfilePage() {
     setSaving(true);
 
     try {
+      if (user && formData.full_name) {
+        const [firstName, ...rest] = formData.full_name.trim().split(" ");
+        const lastName = rest.join(" ") || null;
+        await user.update({ firstName: firstName || null, lastName });
+      }
+
       const supabase = createClient();
       const { error } = await supabase
         .from("profiles")
@@ -82,6 +91,46 @@ export default function ProfilePage() {
       toast.error("An error occurred");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !userId || !user) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload JPG, PNG, WEBP or GIF image");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be smaller than 5MB");
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      await user.setProfileImage({ file });
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: user.imageUrl })
+        .eq("id", userId);
+
+      if (error) {
+        toast.error("Profile photo updated in Clerk, but failed to sync local profile");
+      } else {
+        toast.success("Profile photo updated");
+      }
+
+      await refreshProfile();
+    } catch {
+      toast.error("Failed to upload profile photo");
+    } finally {
+      setUploadingPhoto(false);
+      event.target.value = "";
     }
   };
 
@@ -152,6 +201,31 @@ export default function ProfilePage() {
                         Joined{" "}
                         {new Date(profile.created_at).toLocaleDateString()}
                       </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="profile-photo" className="cursor-pointer inline-flex">
+                        <span className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+                          {uploadingPhoto ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Change Photo
+                            </>
+                          )}
+                        </span>
+                      </Label>
+                      <Input
+                        id="profile-photo"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                        disabled={uploadingPhoto}
+                      />
                     </div>
                   </div>
                 </div>
@@ -288,4 +362,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
