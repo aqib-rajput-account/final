@@ -1,24 +1,7 @@
 import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
-
-// Create a Supabase client with the service role key for admin operations
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error("Missing Supabase environment variables");
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -63,7 +46,7 @@ export async function POST(req: Request) {
   const eventType = evt.type;
 
   try {
-    const supabase = getSupabaseAdmin();
+    const supabase = createSupabaseAdmin();
 
     if (eventType === "user.created") {
       const { id, email_addresses, first_name, last_name, image_url, username, phone_numbers } = evt.data;
