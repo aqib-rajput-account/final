@@ -392,7 +392,11 @@ export default function ProfilePage() {
 
 function EmailVerificationButton() {
   const { user } = useUser();
+  const { refreshProfile } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
 
   const sendEmailVerificationLink = async () => {
     if (!user?.primaryEmailAddress) {
@@ -402,19 +406,11 @@ function EmailVerificationButton() {
 
     setSendingVerification(true);
     try {
-      try {
-        await user.primaryEmailAddress.prepareVerification({
-          strategy: "email_link",
-          redirectUrl: `${window.location.origin}/profile`,
-        });
-        toast.success("Verification email link sent. Please check your inbox.");
-      } catch {
-        // Fallback for projects where email links are not enabled.
-        await user.primaryEmailAddress.prepareVerification({
-          strategy: "email_code",
-        });
-        toast.success("Verification email sent with a code. Please check your inbox.");
-      }
+      await user.primaryEmailAddress.prepareVerification({
+        strategy: "email_code",
+      });
+      setShowCodeInput(true);
+      toast.success("Verification email sent with a 6-digit code. Please check your inbox.");
     } catch (error) {
       const message =
         error && typeof error === "object" && "errors" in error
@@ -427,25 +423,93 @@ function EmailVerificationButton() {
     }
   };
 
+  const verifyEmailCode = async () => {
+    if (!user?.primaryEmailAddress) {
+      toast.error("No primary email found for this account");
+      return;
+    }
+
+    const trimmedCode = verificationCode.trim();
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      toast.error("Please enter a valid 6-digit code.");
+      return;
+    }
+
+    setVerifyingCode(true);
+    try {
+      const result = await user.primaryEmailAddress.attemptVerification({
+        code: trimmedCode,
+      });
+
+      if (result.verification.status === "verified") {
+        await user.reload();
+        await refreshProfile();
+        setShowCodeInput(false);
+        setVerificationCode("");
+        toast.success("Email verified successfully.");
+      } else {
+        toast.error("Verification is not complete yet. Please try again.");
+      }
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "errors" in error
+          ? ((error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.longMessage ??
+            (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.message)
+          : null;
+      toast.error(message || "Invalid verification code. Please try again.");
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
   return (
-    <Button
-      onClick={sendEmailVerificationLink}
-      variant="link"
-      className="h-auto p-0 mt-2 text-primary"
-      disabled={sendingVerification}
-    >
-      {sendingVerification ? (
-        <>
-          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-          Sending verification email...
-        </>
-      ) : (
-        <>
-          <Send className="mr-2 h-3.5 w-3.5" />
-          Send verification email
-        </>
+    <div className="mt-2 space-y-2">
+      <Button
+        onClick={sendEmailVerificationLink}
+        variant="link"
+        className="h-auto p-0 text-primary"
+        disabled={sendingVerification}
+      >
+        {sendingVerification ? (
+          <>
+            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            Sending verification email...
+          </>
+        ) : (
+          <>
+            <Send className="mr-2 h-3.5 w-3.5" />
+            Send verification email
+          </>
+        )}
+      </Button>
+
+      {showCodeInput && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            value={verificationCode}
+            onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="Enter 6-digit code"
+            inputMode="numeric"
+            className="max-w-[220px]"
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={verifyEmailCode}
+            disabled={verifyingCode || verificationCode.length !== 6}
+          >
+            {verifyingCode ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Verify code"
+            )}
+          </Button>
+        </div>
       )}
-    </Button>
+    </div>
   );
 }
 
