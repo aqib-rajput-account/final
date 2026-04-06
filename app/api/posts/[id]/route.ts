@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
+import { resolveIdempotencyKey } from "@/backend/realtime/idempotency";
+import { publishRealtimeEvent } from "@/backend/realtime/service";
 
 export async function GET(
   request: NextRequest,
@@ -84,6 +86,20 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const idempotencyKey = await resolveIdempotencyKey(request, `post-update:${userId}:${id}`);
+    await publishRealtimeEvent({
+      eventType: "post.updated",
+      entityType: "post",
+      entityId: id,
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: "home",
+      payload: {
+        postId: id,
+        authorId: userId,
+      },
+    });
+
     return NextResponse.json({ post, actor_user_id: userId });
   } catch {
     return NextResponse.json(
@@ -128,6 +144,20 @@ export async function DELETE(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `post-delete:${userId}:${id}`);
+    await publishRealtimeEvent({
+      eventType: "post.deleted",
+      entityType: "post",
+      entityId: id,
+      actorUserId: userId,
+      idempotencyKey,
+      feedStreamId: "home",
+      payload: {
+        postId: id,
+        authorId: userId,
+      },
+    });
 
     return NextResponse.json({ success: true, actor_user_id: userId });
   } catch {
