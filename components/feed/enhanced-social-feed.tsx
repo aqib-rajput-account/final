@@ -1,11 +1,11 @@
-'use client'
+"use client"
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import useSWR from 'swr'
 import useSWRInfinite from 'swr/infinite'
 import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -13,25 +13,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import {
-  Heart,
-  MessageCircle,
-  Share2,
-  Image as ImageIcon,
-  Loader2,
-  Search,
-  Users,
-  UserCheck,
-  Send,
-  X,
-  Trash2,
-  Bookmark,
-  Reply,
-  Repeat2,
-  ArrowUp,
-  Link2,
-  Check,
+  Heart, MessageCircle, Share2, ImageIcon, Loader2, Search, Users, UserCheck, Send, X, Trash2, Bookmark, Reply, Repeat2, ArrowUp, Link2, Check,
+  MoreHorizontal, Calendar, MapPin, CheckCircle, Quote, Megaphone, HandHeart, BookOpen, Building2, User, Shield, ChevronDown
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -40,13 +26,14 @@ import { usePresence } from '@/lib/hooks/use-realtime'
 import { useRealtimeGateway } from '@/lib/hooks/use-realtime-gateway'
 import type { RealtimeEventEnvelope } from '@/backend/realtime/types'
 import { cn } from '@/lib/utils'
-import { createClientTraceId, logClientTrace, observeClientMetric } from '@/lib/infrastructure/web-observability'
-import { resolveFeedReturnContext, trackFeedFunnelEvent } from '@/lib/infrastructure/product-analytics'
 
 interface FeedPost {
   id: string
   content: string
   image_url: string | null
+  post_type: string
+  category: string
+  visibility: string
   created_at: string
   author_id: string
   likes_count: number
@@ -57,6 +44,7 @@ interface FeedPost {
     avatar_url: string | null
     profession: string | null
     role: string | null
+    verified?: boolean
   } | null
   metadata?: {
     shared_post_id?: string
@@ -64,6 +52,12 @@ interface FeedPost {
     shared_post_excerpt?: string
     [key: string]: unknown
   } | null
+  eventDetails?: {
+    title: string
+    date: string
+    location: string
+  }
+  quoteSource?: string
 }
 
 interface FeedPage {
@@ -74,20 +68,6 @@ interface FeedPage {
   totalCount?: number | null
 }
 
-interface PostComment {
-  id: string
-  content: string
-  created_at: string
-  author_id: string
-  parent_comment_id?: string | null
-  author?: {
-    id: string
-    full_name: string | null
-    avatar_url: string | null
-    role: string | null
-  }
-}
-
 const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
   if (!res.ok) throw new Error('Failed to fetch')
@@ -96,7 +76,7 @@ const fetcher = async <T,>(url: string): Promise<T> => {
 
 function PostSkeleton() {
   return (
-    <Card>
+    <Card className="feed-glass post-enter">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 rounded-full" />
@@ -114,20 +94,8 @@ function PostSkeleton() {
   )
 }
 
-function UserCard({
-  user: member,
-  isOnline = false,
-  currentUserId,
-  initialIsFollowing = false,
-  onFollowToggle,
-}: {
-  user: any
-  isOnline?: boolean
-  currentUserId?: string | null
-  initialIsFollowing?: boolean
-  onFollowToggle?: (memberId: string, nowFollowing: boolean) => void
-}) {
-  const [isFollowing, setIsFollowing] = useState(initialIsFollowing)
+function UserCard({ user: member, isOnline = false, currentUserId, onFollowToggle }: any) {
+  const [isFollowing, setIsFollowing] = useState(member.isFollowing || false)
   const [isToggling, setIsToggling] = useState(false)
   const isSelf = currentUserId === member.id
 
@@ -138,12 +106,8 @@ function UserCard({
     setIsToggling(true)
     try {
       const res = await fetch(`/api/users/${member.id}/follow`, { method: next ? 'POST' : 'DELETE' })
-      if (!res.ok) {
-        setIsFollowing(!next)
-        toast.error(next ? 'Failed to follow' : 'Failed to unfollow')
-      } else {
-        onFollowToggle?.(member.id, next)
-      }
+      if (!res.ok) throw new Error('Failed')
+      onFollowToggle?.(member.id, next)
     } catch {
       setIsFollowing(!next)
       toast.error('Network error')
@@ -167,300 +131,95 @@ function UserCard({
         </Link>
         <p className="text-xs text-muted-foreground truncate">{member.profession || member.role || 'Member'}</p>
       </div>
-      {isOnline && !currentUserId && (
-        <Badge variant="secondary" className="text-xs shrink-0">Online</Badge>
-      )}
       {currentUserId && !isSelf && (
-        <Button
-          variant={isFollowing ? 'secondary' : 'outline'}
-          size="sm"
-          className="h-7 px-2 text-xs shrink-0"
-          onClick={handleFollowToggle}
-          disabled={isToggling}
-        >
-          {isToggling ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : isFollowing ? (
-            <><UserCheck className="h-3 w-3 mr-1" />Following</>
-          ) : (
-            <>Follow</>
-          )}
+        <Button variant={isFollowing ? 'secondary' : 'outline'} size="sm" className="h-7 px-2 text-xs shrink-0 rounded-full" onClick={handleFollowToggle} disabled={isToggling}>
+          {isToggling ? <Loader2 className="h-3 w-3 animate-spin" /> : isFollowing ? <><UserCheck className="h-3 w-3 mr-1" />Following</> : "Follow"}
         </Button>
       )}
     </div>
   )
 }
 
-/** Normalise a raw API post row — single canonical place for body→content mapping */
-function normalisePost(raw: any): FeedPost {
-  return {
-    ...raw,
-    content: raw.content ?? raw.body ?? '',
-    likes_count: raw.likes_count ?? raw.like_count ?? 0,
-    comments_count: raw.comments_count ?? raw.comment_count ?? 0,
-  }
-}
-
 export function EnhancedSocialFeed() {
   const { userId, profile, resolvedRole } = useAuth()
+  const [activeTab, setActiveTab] = useState<'all' | 'following' | 'announcements' | 'prayer-requests'>('all')
+  const [postSearchQuery, setPostSearchQuery] = useState('')
+  const [isComposeExpanded, setIsComposeExpanded] = useState(false)
   const [newPostContent, setNewPostContent] = useState('')
+  const [newPostType, setNewPostType] = useState('text')
+  const [newPostCategory, setNewPostCategory] = useState('general')
   const [newPostImage, setNewPostImage] = useState<string | null>(null)
   const [isPosting, setIsPosting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [newPostsCount, setNewPostsCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'online' | 'members'>('online')
-  const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
-  const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
-  const [shareNote, setShareNote] = useState('')
-  const [newPostsCount, setNewPostsCount] = useState(0)
-  const [mentionSearch, setMentionSearch] = useState('')
-  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
-  const [postSearchQuery, setPostSearchQuery] = useState('')
-  const traceIdRef = useRef<string>(createClientTraceId())
+  
   const observerRef = useRef<HTMLDivElement | null>(null)
 
   const getKey = useCallback((pageIndex: number, previousPageData: FeedPage | null) => {
     if (!userId) return null
     if (previousPageData && !previousPageData.nextCursor) return null
     const params = new URLSearchParams({ limit: '20' })
-    if (pageIndex > 0 && previousPageData?.nextCursor) {
-      params.set('cursor', previousPageData.nextCursor)
-    }
+    if (pageIndex > 0 && previousPageData?.nextCursor) params.set('cursor', previousPageData.nextCursor)
     return `/api/feed/posts?${params.toString()}`
   }, [userId])
 
-  const {
-    data: feedPages,
-    mutate: mutateFeed,
-    size,
-    setSize,
-    isLoading: feedLoading,
-    isValidating: feedValidating,
-  } = useSWRInfinite<FeedPage>(getKey, fetcher, {
-    revalidateFirstPage: false,
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    persistSize: true,
-    revalidateAll: false,
-    dedupingInterval: 3000,
-    refreshInterval: 0,
-    keepPreviousData: true,
-  })
+  const { data: feedPages, mutate: mutateFeed, size, setSize, isLoading: feedLoading, isValidating: feedValidating } = useSWRInfinite<FeedPage>(getKey, fetcher, { keepPreviousData: true })
 
-  const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher, { keepPreviousData: true })
-  const { data: discoveryData, mutate: mutateDiscovery } = useSWR(userId ? '/api/users/community?mode=discovery' : null, fetcher, { keepPreviousData: true })
+  const { data: onlineUsersData } = useSWR(userId ? '/api/users/online' : null, fetcher, { keepPreviousData: true })
   const membersUrl = useMemo(() => {
     if (!userId) return null
     const params = new URLSearchParams()
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
-    const qs = params.toString()
-    return qs ? `/api/users/community?${qs}` : '/api/users/community'
+    return `/api/users/community${params.size ? `?${params.toString()}` : ''}`
   }, [userId, debouncedSearch])
-  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher, { keepPreviousData: true, revalidateOnFocus: false })
-
-  const lastStablePosts = useRef<FeedPost[]>([])
+  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher, { keepPreviousData: true })
+  
   const posts = useMemo(() => {
     let allPosts = feedPages?.flatMap((page) => page.data) ?? []
-    
-    // If we have no posts right now, use the last stable posts to prevent a white-out blink
-    if (allPosts.length === 0 && lastStablePosts.current.length > 0) {
-      allPosts = lastStablePosts.current
-    } else if (allPosts.length > 0) {
-      lastStablePosts.current = allPosts
-    }
-
     if (postSearchQuery.trim()) {
       const q = postSearchQuery.toLowerCase()
-      return allPosts.filter((p) =>
-        p.content.toLowerCase().includes(q) ||
-        p.profiles?.full_name?.toLowerCase().includes(q)
-      )
+      allPosts = allPosts.filter((p) => p.content.toLowerCase().includes(q) || p.profiles?.full_name?.toLowerCase().includes(q))
     }
+    if (activeTab === 'prayer-requests') allPosts = allPosts.filter(p => p.post_type === 'prayer-request')
+    if (activeTab === 'announcements') allPosts = allPosts.filter(p => p.post_type === 'announcement' || p.category === 'announcement')
+    // 'following' filter relies on backend or we mock it if API doesn't support it yet
     return allPosts
-  }, [feedPages, postSearchQuery])
-  
-  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userLikes) ?? []), [feedPages])
-  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userBookmarks) ?? []), [feedPages])
+  }, [feedPages, postSearchQuery, activeTab])
 
-  const lastStableOnlineUsers = useRef<any[]>([])
-  const lastStableMembers = useRef<any[]>([])
-  const lastStableDiscovery = useRef<any[]>([])
-
-  const onlineUsers = useMemo(() => {
-    const data = (onlineUsersData as any)?.data
-    if (!data && lastStableOnlineUsers.current.length > 0) return lastStableOnlineUsers.current
-    if (data) lastStableOnlineUsers.current = data
-    return data || []
-  }, [onlineUsersData])
-
-  const members = useMemo(() => {
-    const data = (membersData as any)?.data
-    if (!data && lastStableMembers.current.length > 0) return lastStableMembers.current
-    if (data) lastStableMembers.current = data
-    return data || []
-  }, [membersData])
-
-  const discoverySuggestions = useMemo(() => {
-    const data = (discoveryData as any)?.data
-    if (!data && lastStableDiscovery.current.length > 0) return lastStableDiscovery.current
-    if (data) lastStableDiscovery.current = data
-    return data || []
-  }, [discoveryData])
-
-  const realtimeOnlineIds = useMemo(() => new Set(Object.keys(realtimeOnline)), [realtimeOnline])
-
+  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
+  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
+  const onlineUsers = (onlineUsersData as any)?.data || []
+  const members = (membersData as any)?.data || []
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
   const isLoadingMore = feedValidating && feedPages && feedPages.length === size && hasMore
 
-  const mergedOnlineUsers = useMemo(() => {
-    const byId = new Map<string, any>()
-    onlineUsers.forEach((member: any) => byId.set(member.id, member))
-    members.filter((member: any) => realtimeOnlineIds.has(member.id)).forEach((member: any) => byId.set(member.id, member))
-    if (userId && (realtimeOnlineIds.has(userId) || onlineUsers.some((member: any) => member.id === userId))) {
-      byId.set(userId, {
-        id: userId,
-        full_name: profile?.full_name || 'You',
-        avatar_url: profile?.avatar_url || null,
-        profession: (profile as any)?.profession || null,
-        role: resolvedRole || profile?.role || 'member',
-      })
-    }
-    return Array.from(byId.values())
-  }, [members, onlineUsers, profile, realtimeOnlineIds, resolvedRole, userId])
-
-  // Surgically patch a post in the SWR cache without triggering a refetch
   const patchFeed = useCallback((fn: (post: FeedPost) => FeedPost) => {
-    mutateFeed((pages) => {
-      if (!pages) return pages
-      return pages.map((page) => ({ ...page, data: page.data.map(fn) }))
-    }, false)
+    mutateFeed((pages) => !pages ? pages : pages.map((page) => ({ ...page, data: page.data.map(fn) })), false)
   }, [mutateFeed])
 
-  /**
-   * Realtime event handler.
-   * KEY RULE: skip patches for events the current user triggered — they already
-   * have the optimistic update applied. Only apply patches for other users' events
-   * to avoid double-counting likes, comments, etc.
-   */
   const handleRealtimeEvent = useCallback((event: RealtimeEventEnvelope) => {
-    observeClientMetric('feed.realtime.events_received.total', 1, { eventType: event.eventType })
-    logClientTrace({
-      traceId: String((event.payload as Record<string, unknown>)?.traceId ?? traceIdRef.current),
-      message: 'Feed consumed realtime event',
-      tags: { eventType: event.eventType, entityId: event.entityId },
-    })
-
     const isSelf = event.actorUserId === userId
-
     if (event.eventType === 'post.liked' || event.eventType === 'post.unliked') {
-      // Self already applied optimistic update — skip to avoid double-count
       if (isSelf) return
       const postId = String(event.payload.postId ?? event.entityId)
       const direction = event.eventType === 'post.liked' ? 1 : -1
       patchFeed((post) => post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + direction) } : post)
-      return
-    }
-
-    if (event.eventType === 'comment.created') {
-      // Self already applied optimistic update — skip to avoid double-count
+    } else if (event.eventType === 'comment.created') {
       if (isSelf) return
       const postId = String(event.payload.postId ?? '')
-      if (!postId) return
-      patchFeed((post) => post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post)
-      return
-    }
-
-    if (event.eventType === 'post.created') {
-      // Own post was already optimistically prepended — skip
-      if (isSelf) return
-      setNewPostsCount((prev) => prev + 1)
-      return
-    }
-
-    if (event.eventType === 'post.updated') {
-      // Surgically update the post body in cache — no full refetch needed
+      if (postId) patchFeed((post) => post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post)
+    } else if (event.eventType === 'post.created') {
+      if (!isSelf) setNewPostsCount(p => p + 1)
+    } else if (event.eventType === 'post.deleted') {
       const postId = String(event.payload.postId ?? event.entityId)
-      const updatedBody = event.payload.body as string | undefined
-      if (postId && updatedBody) {
-        patchFeed((post) => post.id === postId ? { ...post, content: updatedBody } : post)
-      }
-      return
+      mutateFeed((pages) => pages?.map(page => ({ ...page, data: page.data.filter(p => p.id !== postId) })), false)
     }
+  }, [mutateFeed, patchFeed, userId])
 
-    if (event.eventType === 'post.deleted') {
-      const postId = String(event.payload.postId ?? event.entityId)
-      if (!postId) return
-      mutateFeed((pages) => pages?.map((page) => ({
-        ...page,
-        data: page.data.filter((p) => p.id !== postId),
-      })), false)
-      return
-    }
-
-    if (event.eventType === 'follow.created' || event.eventType === 'follow.deleted') {
-      mutateMembers()
-      mutateOnlineUsers()
-      mutateDiscovery()
-    }
-  }, [mutateMembers, mutateOnlineUsers, mutateDiscovery, mutateFeed, patchFeed, userId])
-
-  /**
-   * Prepend new posts from other users without resetting scroll position.
-   * Fetches only the first page and inserts posts not already in the cache.
-   */
-  const refreshFeedPosts = useCallback(async () => {
-    setNewPostsCount(0)
-    try {
-      const res = await fetch('/api/feed/posts?limit=20')
-      if (!res.ok) return
-      const freshPage: FeedPage = await res.json()
-      mutateFeed((pages) => {
-        if (!pages) return [freshPage]
-        const existingIds = new Set(pages.flatMap((p) => p.data.map((post) => post.id)))
-        const newPosts = freshPage.data.filter((p) => !existingIds.has(p.id))
-        if (newPosts.length === 0) return pages
-        return [{ ...pages[0], data: [...newPosts, ...pages[0].data] }, ...pages.slice(1)]
-      }, false)
-    } catch {
-      // Fallback to full revalidation if fetch fails
-      mutateFeed()
-    }
-  }, [mutateFeed])
-
-  useEffect(() => {
-    const returnContext = resolveFeedReturnContext()
-    trackFeedFunnelEvent({ funnel: 'feed_engagement', step: 'view', traceId: traceIdRef.current })
-    if (returnContext.isReturn) {
-      trackFeedFunnelEvent({
-        funnel: 'feed_engagement',
-        step: 'return',
-        traceId: traceIdRef.current,
-        metadata: { minutesSinceLastView: returnContext.minutesSinceLastView },
-      })
-    }
-  }, [])
-
-  useRealtimeGateway({
-    enabled: !!userId,
-    feedStreamId: 'home',
-    onEvent: handleRealtimeEvent,
-    onError: () => mutateFeed(),
-  })
-
-  usePresence({
-    channelName: 'community-presence',
-    userId: userId || '',
-    userInfo: { full_name: profile?.full_name, avatar_url: profile?.avatar_url, role: profile?.role },
-    enabled: !!userId,
-    onSync: (state) => {
-      const flattened = Object.entries(state).reduce<Record<string, any>>((acc, [key, presences]) => {
-        if (presences.length > 0) acc[key] = presences[0]
-        return acc
-      }, {})
-      setRealtimeOnline(flattened)
-    },
-  })
+  useRealtimeGateway({ enabled: !!userId, feedStreamId: 'home', onEvent: handleRealtimeEvent })
+  usePresence({ channelName: 'community-presence', userId: userId || '', enabled: !!userId })
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300)
@@ -476,727 +235,342 @@ export function EnhancedSocialFeed() {
     return () => observer.disconnect()
   }, [setSize, hasMore, feedLoading])
 
-  const handleImageUpload = useCallback(async (file: File) => {
+  const refreshFeedPosts = async () => {
+    setNewPostsCount(0)
+    try {
+      const freshPage: FeedPage = await fetcher('/api/feed/posts?limit=20')
+      mutateFeed(pages => {
+        if (!pages) return [freshPage]
+        const existingIds = new Set(pages.flatMap(p => p.data.map(post => post.id)))
+        const newP = freshPage.data.filter(p => !existingIds.has(p.id))
+        return newP.length ? [{ ...pages[0], data: [...newP, ...pages[0].data] }, ...pages.slice(1)] : pages
+      }, false)
+    } catch { mutateFeed() }
+  }
+
+  const handleImageUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) return toast.error('Please select an image file')
-    if (file.size > 5 * 1024 * 1024) return toast.error('Image must be less than 5MB')
     setIsUploading(true)
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const response = await fetch('/api/upload', { method: 'POST', body: formData })
-      if (!response.ok) throw new Error('Upload failed')
-      const { url, pathname } = await response.json()
-      const imageUrl = typeof url === 'string' && url.length > 0
-        ? url
-        : pathname ? `/api/file?pathname=${encodeURIComponent(pathname)}` : null
-      if (!imageUrl) throw new Error('Upload completed but no image URL was returned')
-      setNewPostImage(imageUrl)
-      toast.success('Image uploaded')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to upload image')
-    } finally {
-      setIsUploading(false)
-    }
-  }, [])
+      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error()
+      const { url } = await res.json()
+      setNewPostImage(url)
+    } catch { toast.error('Upload failed') }
+    finally { setIsUploading(false) }
+  }
 
-  /**
-   * Optimistically prepend a post with a known tempId so we can replace it
-   * precisely when the real post comes back — no full refetch needed.
-   */
-  const optimisticAddPost = useCallback((tempId: string, content: string, imageUrl: string | null, metadata?: Record<string, unknown>) => {
-    const optimisticPost: FeedPost = {
-      id: tempId,
-      content,
-      image_url: imageUrl,
-      created_at: new Date().toISOString(),
-      author_id: userId || 'unknown',
-      likes_count: 0,
-      comments_count: 0,
-      metadata: metadata || {},
-      profiles: {
-        id: userId || 'unknown',
-        full_name: profile?.full_name || 'You',
-        avatar_url: profile?.avatar_url || null,
-        profession: (profile as any)?.profession || null,
-        role: profile?.role || null,
-      },
-    }
-    mutateFeed((pages) => {
-      if (!pages || pages.length === 0) {
-        return [{ data: [optimisticPost], userLikes: [], userBookmarks: [], nextCursor: null }]
-      }
-      return [{ ...pages[0], data: [optimisticPost, ...pages[0].data] }, ...pages.slice(1)]
-    }, false)
-  }, [mutateFeed, profile, userId])
-
-  const updatePostContent = useCallback((value: string) => {
-    setNewPostContent(value)
-    const lastAt = value.lastIndexOf('@')
-    if (lastAt !== -1) {
-      const query = value.slice(lastAt + 1)
-      if (!query.includes(' ')) {
-        setMentionSearch(query)
-        setShowMentionSuggestions(true)
-        return
-      }
-    }
-    setShowMentionSuggestions(false)
-  }, [])
-
-  const insertMention = useCallback((mentionName: string) => {
-    const lastAt = newPostContent.lastIndexOf('@')
-    setNewPostContent(newPostContent.slice(0, lastAt) + '@' + mentionName + ' ')
-    setShowMentionSuggestions(false)
-  }, [newPostContent])
-
-  const handlePostCreate = useCallback(async (opts?: { asShare?: boolean; sourcePost?: FeedPost | null; contentOverride?: string }) => {
-    const content = opts?.contentOverride ?? newPostContent
-    if (!userId || !content.trim()) return toast.error('Please write something to post')
-
-    const tempId = `optimistic-${Date.now()}`
+  const handlePostCreate = async () => {
+    if (!newPostContent.trim()) return toast.error('Empty post')
     setIsPosting(true)
-    trackFeedFunnelEvent({
-      funnel: 'feed_engagement',
-      step: 'interact',
-      traceId: traceIdRef.current,
-      metadata: { action: opts?.asShare ? 'share_post' : 'create_post' },
-    })
-
-    const shareMetadata = opts?.asShare && opts.sourcePost ? {
-      shared_post_id: opts.sourcePost.id,
-      shared_author_name: opts.sourcePost.profiles?.full_name,
-      shared_post_excerpt: opts.sourcePost.content.slice(0, 180),
-    } : undefined
-
-    optimisticAddPost(tempId, content.trim(), newPostImage, shareMetadata)
-
+    const tempId = `optimistic-${Date.now()}`
+    const opt: FeedPost = {
+      id: tempId, content: newPostContent.trim(), image_url: newPostImage, created_at: new Date().toISOString(), author_id: userId || '', likes_count: 0, comments_count: 0, post_type: newPostType, category: newPostCategory, visibility: 'public',
+      profiles: { id: userId || '', full_name: profile?.full_name || 'You', avatar_url: profile?.avatar_url || null, profession: (profile as any)?.profession || null, role: profile?.role || 'user' }
+    }
+    
+    mutateFeed(pages => pages ? [{ ...pages[0], data: [opt, ...pages[0].data] }, ...pages.slice(1)] : [{ data: [opt], userLikes: [], userBookmarks: [], nextCursor: null }], false)
+    
     try {
-      const response = await fetch('/api/feed/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: content.trim(),
-          image_url: newPostImage,
-          post_type: newPostImage ? 'image' : 'text',
-          category: 'general',
-          metadata: opts?.asShare && opts.sourcePost ? { shared_post_id: opts.sourcePost.id } : {},
-        }),
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to create post')
-
-      // Replace the optimistic entry with the real post — no full refetch, no flash
-      const realPost: FeedPost = normalisePost(payload.post)
-      mutateFeed((pages) => pages?.map((page) => ({
-        ...page,
-        data: page.data.map((p) => p.id === tempId ? realPost : p),
-      })), false)
-
+      const res = await fetch('/api/feed/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: newPostContent.trim(), image_url: newPostImage, post_type: newPostType, category: newPostCategory }) })
+      const { post } = await res.json()
+      mutateFeed(pages => pages?.map(p => ({ ...p, data: p.data.map(px => px.id === tempId ? { ...post, content: post.body, likes_count: post.like_count||0, comments_count: post.comment_count||0 } : px) })), false)
       setNewPostContent('')
       setNewPostImage(null)
-      setShareTargetPost(null)
-      setShareNote('')
-      toast.success(opts?.asShare ? 'Shared to your feed' : 'Post created!')
-    } catch (error: any) {
-      // Roll back the optimistic entry by revalidating from the server
-      mutateFeed()
-      toast.error(error.message || 'Failed to create post')
-    } finally {
-      setIsPosting(false)
-    }
-  }, [mutateFeed, newPostContent, newPostImage, optimisticAddPost, userId])
-
-  const handleLike = useCallback(async (postId: string, isLiked: boolean) => {
-    if (!userId) return toast.error('Please sign in to like posts')
-    trackFeedFunnelEvent({
-      funnel: 'feed_engagement',
-      step: 'interact',
-      traceId: traceIdRef.current,
-      metadata: { action: isLiked ? 'unlike' : 'like', postId },
-    })
-    // Optimistic update — realtime event from self will be ignored in handleRealtimeEvent
-    patchFeed((post) => post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + (isLiked ? -1 : 1)) } : post)
-    mutateFeed((pages) => pages?.map((page) => ({
-      ...page,
-      userLikes: isLiked ? page.userLikes.filter((id) => id !== postId) : Array.from(new Set([...page.userLikes, postId])),
-    })), false)
-    try {
-      const response = await fetch(`/api/posts/${postId}/like`, { method: isLiked ? 'DELETE' : 'POST' })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to update like')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update like')
-      mutateFeed()
-    }
-  }, [mutateFeed, patchFeed, userId])
-
-  const handleCommentCreate = useCallback(async (postId: string, content: string, parentCommentId?: string) => {
-    const trimmed = content.trim()
-    if (!trimmed) return
-    trackFeedFunnelEvent({
-      funnel: 'feed_engagement',
-      step: 'interact',
-      traceId: traceIdRef.current,
-      metadata: { action: 'comment', postId },
-    })
-    // Optimistic update — realtime event from self will be ignored in handleRealtimeEvent
-    patchFeed((post) => post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post)
-    try {
-      const response = await fetch(`/api/posts/${postId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: trimmed, parent_comment_id: parentCommentId }),
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to comment')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to comment')
-      mutateFeed()
-    }
-  }, [mutateFeed, patchFeed])
-
-  const handleBookmark = useCallback(async (postId: string, isBookmarked: boolean) => {
-    mutateFeed((pages) => pages?.map((page) => ({
-      ...page,
-      userBookmarks: isBookmarked ? page.userBookmarks.filter((id) => id !== postId) : Array.from(new Set([...page.userBookmarks, postId])),
-    })), false)
-    try {
-      const response = await fetch('/api/feed/bookmarks', {
-        method: isBookmarked ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId }),
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to update bookmark')
+      setIsComposeExpanded(false)
+      toast.success('Post created!')
     } catch {
       mutateFeed()
-    }
-  }, [mutateFeed])
+      toast.error('Failed to post')
+    } finally { setIsPosting(false) }
+  }
 
-  const handleDeletePost = useCallback(async (postId: string) => {
-    // Optimistic removal — realtime post.deleted event from self is also handled safely
-    mutateFeed((pages) => pages?.map((page) => ({ ...page, data: page.data.filter((p) => p.id !== postId) })), false)
-    try {
-      const response = await fetch(`/api/feed/posts/${postId}`, { method: 'DELETE' })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Failed to delete post')
-      toast.success('Post deleted')
-    } catch {
-      toast.error('Failed to delete post')
-      mutateFeed()
-    }
-  }, [mutateFeed])
+  const handleLike = async (postId: string, isLiked: boolean) => {
+    patchFeed(p => p.id === postId ? { ...p, likes_count: Math.max(0, p.likes_count + (isLiked ? -1 : 1)) } : p)
+    mutateFeed(pages => pages?.map(p => ({ ...p, userLikes: isLiked ? p.userLikes.filter(id => id !== postId) : [...new Set([...p.userLikes, postId])] })), false)
+    try { await fetch(`/api/posts/${postId}/like`, { method: isLiked ? 'DELETE' : 'POST' }) } catch { mutateFeed() }
+  }
+
+  const handleBookmark = async (postId: string, isBookmarked: boolean) => {
+    mutateFeed(pages => pages?.map(p => ({ ...p, userBookmarks: isBookmarked ? p.userBookmarks.filter(id => id !== postId) : [...new Set([...p.userBookmarks, postId])] })), false)
+    try { await fetch('/api/feed/bookmarks', { method: isBookmarked ? 'DELETE' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId }) }) } catch { mutateFeed() }
+  }
+
+  const handleDeletePost = async (postId: string) => {
+    mutateFeed(pages => pages?.map(p => ({ ...p, data: p.data.filter(x => x.id !== postId) })), false)
+    try { await fetch(`/api/feed/posts/${postId}`, { method: 'DELETE' }); toast.success('Deleted') } catch { mutateFeed(); toast.error('Failed to delete') }
+  }
 
   if (!userId) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Users className="h-16 w-16 text-muted-foreground mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Join the Community</h2>
-        <p className="text-muted-foreground mb-6 max-w-md">Sign in to connect with community members and participate in conversations.</p>
-        <div className="flex gap-3">
-          <Button asChild><Link href="/sign-in">Sign In</Link></Button>
-          <Button variant="outline" asChild><Link href="/sign-up">Create Account</Link></Button>
-        </div>
+        <Button asChild className="rounded-full mt-4"><Link href="/sign-in">Sign In</Link></Button>
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Left sidebar — profile card */}
-      <aside className="hidden lg:block lg:col-span-3">
-        <Card className="sticky top-20">
-          <CardContent className="p-6">
-            <div className="flex flex-col items-center text-center">
-              <Avatar className="h-20 w-20 mb-4">
-                <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || undefined} />
-                <AvatarFallback className="text-2xl">{profile?.full_name?.[0] || 'U'}</AvatarFallback>
-              </Avatar>
-              <h3 className="font-semibold text-lg">{profile?.full_name || 'Welcome!'}</h3>
-              <p className="text-sm text-muted-foreground mb-2">{(profile as any)?.profession || 'Community Member'}</p>
-              <Badge variant="secondary" className="capitalize">{resolvedRole || profile?.role || 'member'}</Badge>
-              <div className="w-full mt-6 pt-4 border-t space-y-2">
-                <Link href="/profile" className="block"><Button variant="outline" className="w-full" size="sm">View Profile</Button></Link>
-                <Link href="/settings" className="block"><Button variant="ghost" className="w-full" size="sm">Settings</Button></Link>
-              </div>
-            </div>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
+      {/* Left Sidebar */}
+      <aside className="hidden lg:block lg:col-span-3 space-y-6">
+        <Card className="sticky top-20 feed-glass border-border/40 shadow-sm overflow-hidden">
+          <div className="h-20 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent"></div>
+          <CardContent className="p-6 pt-0 relative flex flex-col items-center text-center">
+            <Avatar className="h-24 w-24 border-4 border-background -mt-12 mb-3 shadow-sm">
+              <AvatarImage src={profile?.avatar_url || ''} />
+              <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{profile?.full_name?.[0]}</AvatarFallback>
+            </Avatar>
+            <h3 className="font-bold text-lg">{profile?.full_name || 'Welcome'}</h3>
+            <p className="text-xs text-muted-foreground mb-3">{profile?.email}</p>
+            <Badge variant="secondary" className="capitalize rounded-full px-3">{resolvedRole || 'Member'}</Badge>
+            <Link href="/profile" className="w-full mt-4"><Button variant="outline" className="w-full rounded-full">My Profile</Button></Link>
           </CardContent>
         </Card>
       </aside>
 
-      {/* Main feed column */}
-      <main className="lg:col-span-6 space-y-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search posts..."
-            value={postSearchQuery}
-            onChange={(e) => setPostSearchQuery(e.target.value)}
-            className="pl-9 bg-background/50 border-muted focus:bg-background transition-colors"
-          />
-        </div>
-
-        {/* Compose box */}
-        <Card>
+      {/* Main Feed */}
+      <main className="lg:col-span-6 space-y-4">
+        {/* Compose */}
+        <Card className={cn("feed-glass border-border/40 transition-all duration-300", isComposeExpanded ? "shadow-md" : "shadow-sm")}>
           <CardContent className="p-4">
             <div className="flex gap-3">
               <Avatar className="h-10 w-10 shrink-0">
-                <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || undefined} />
-                <AvatarFallback>{profile?.full_name?.[0] || 'U'}</AvatarFallback>
+                <AvatarImage src={profile?.avatar_url || ''} />
+                <AvatarFallback>{profile?.full_name?.[0]}</AvatarFallback>
               </Avatar>
-              <div className="flex-1 space-y-3 relative">
-                <Textarea
-                  placeholder="Share an update… use @name for mentions"
+              <div className="flex-1 space-y-3">
+                <Textarea 
+                  placeholder="What's happening in your community?" 
+                  className={cn("resize-none border-none bg-transparent focus-visible:ring-0 p-2 text-base transition-all", isComposeExpanded ? "min-h-[100px]" : "min-h-[40px]")}
+                  onFocus={() => setIsComposeExpanded(true)}
                   value={newPostContent}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updatePostContent(e.target.value)}
-                  className="min-h-[80px] resize-none"
+                  onChange={(e) => setNewPostContent(e.target.value)}
                 />
-                {showMentionSuggestions && (
-                  <Card className="absolute z-50 left-0 right-0 top-full mt-1 shadow-xl border-primary/20 overflow-hidden">
-                    <ScrollArea className="max-h-[200px]">
-                      <div className="p-1">
-                        {members.filter((m: any) =>
-                          (m.full_name || '').toLowerCase().includes(mentionSearch.toLowerCase())
-                        ).slice(0, 5).map((m: any) => (
-                          <button
-                            key={m.id}
-                            className="w-full flex items-center gap-2 p-2 hover:bg-muted text-left text-sm rounded-md transition-colors"
-                            onClick={() => insertMention(m.full_name || 'member')}
-                          >
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage src={m.avatar_url} />
-                              <AvatarFallback>{(m.full_name || 'U')[0]}</AvatarFallback>
-                            </Avatar>
-                            <span className="font-medium">{m.full_name}</span>
-                            <span className="text-xs text-muted-foreground">@{m.id.slice(0, 4)}</span>
-                          </button>
-                        ))}
+                {(isComposeExpanded || newPostImage) && (
+                  <div className="animate-in fade-in slide-in-from-top-2">
+                    {newPostImage && (
+                      <div className="relative inline-block mb-3">
+                        <img src={newPostImage} alt="Upload" className="rounded-xl max-h-48 object-cover border border-border/50" />
+                        <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full shadow-sm" onClick={() => setNewPostImage(null)}><X className="h-3 w-3" /></Button>
                       </div>
-                    </ScrollArea>
-                  </Card>
-                )}
-                {newPostImage && (
-                  <div className="relative inline-block">
-                    <img src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
-                    <Button size="icon" variant="destructive" className="absolute -top-2 -right-2 h-6 w-6" onClick={() => setNewPostImage(null)}>
-                      <X className="h-3 w-3" />
-                    </Button>
+                    )}
+                    
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {['text','announcement','prayer-request','quote','event'].map((type) => (
+                        <Badge 
+                          key={type} 
+                          variant={newPostType === type ? 'default' : 'secondary'} 
+                          className="cursor-pointer hover:bg-primary/80 capitalize rounded-full px-3 py-1 text-xs"
+                          onClick={() => setNewPostType(type)}
+                        >
+                          {type.replace('-', ' ')}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-border/50 pt-3">
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="rounded-full text-primary hover:bg-primary/10" onClick={() => document.getElementById('img-upload')?.click()} disabled={isUploading}>
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-5 w-5" />}
+                        </Button>
+                        <input id="img-upload" type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) handleImageUpload(f) }} />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button variant="ghost" size="sm" className="rounded-full text-xs" onClick={() => { setIsComposeExpanded(false); setNewPostContent(''); setNewPostImage(null) }}>Cancel</Button>
+                        <Button className="rounded-full px-6 font-semibold shadow-sm" onClick={handlePostCreate} disabled={!newPostContent.trim() || isPosting || isUploading}>
+                          {isPosting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Post"}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => document.getElementById('post-image-input')?.click()} disabled={isUploading}>
-                      {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-                      <span className="ml-2 hidden sm:inline">Photo</span>
-                    </Button>
-                    <input id="post-image-input" type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleImageUpload(file); e.target.value = '' }} />
-                  </div>
-                  <Button onClick={() => handlePostCreate()} disabled={isPosting || !newPostContent.trim()} size="sm">
-                    {isPosting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}Post
-                  </Button>
-                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Post list */}
-        <div className="space-y-4 relative">
-          {/* Refresh indicator removed to eliminate blinking feel during background updates */}
+        {/* Tabs */}
+        <div className="flex bg-background/80 backdrop-blur top-14 sticky z-20 py-2 border-b border-border/40">
+          {['all', 'following', 'announcements', 'prayer-requests'].map((tab) => (
+             <button 
+               key={tab} 
+               onClick={() => setActiveTab(tab as any)}
+               className={cn(
+                 "px-4 py-2 text-sm font-semibold capitalize transition-all relative flex-1 text-center border-b-2",
+                 activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/30"
+               )}
+             >
+               {tab.replace('-', ' ')}
+             </button>
+          ))}
+        </div>
 
-          {/* New posts banner — prepends without resetting scroll */}
-          {newPostsCount > 0 && (
-            <div className="sticky top-20 z-20 flex justify-center py-2 animate-in fade-in slide-in-from-top-4 duration-500">
-              <Button
-                variant="default"
-                size="sm"
-                className="rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-6 gap-3 border-none ring-4 ring-background transform hover:scale-105 transition-all"
-                onClick={() => { void refreshFeedPosts() }}
-              >
-                <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                {newPostsCount} {newPostsCount === 1 ? 'New Post' : 'New Posts'}
-                <ArrowUp className="h-4 w-4 animate-bounce" />
-              </Button>
-            </div>
-          )}
+        {/* New Posts Banner */}
+        {newPostsCount > 0 && (
+          <div className="flex justify-center sticky top-32 z-30 animate-in fade-in slide-in-from-top-4">
+            <Button className="rounded-full shadow-lg bg-primary hover:bg-primary/90 hover:scale-105 transition-all text-sm font-bold" onClick={refreshFeedPosts}>
+              <ArrowUp className="w-4 h-4 mr-2" /> {newPostsCount} New Post{newPostsCount>1?'s':''}
+            </Button>
+          </div>
+        )}
 
-          {feedLoading && posts.length === 0 && !feedPages ? (
-            <div className="space-y-4">
-              <PostSkeleton /><PostSkeleton /><PostSkeleton />
-            </div>
-          ) : posts.length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-semibold mb-2">No posts yet</h3>
-                <p className="text-muted-foreground">Be the first to share something with the community!</p>
-              </CardContent>
-            </Card>
-          ) : (
-            posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                isOwner={post.author_id === userId}
-                isLiked={userLikes.has(post.id)}
-                isBookmarked={userBookmarks.has(post.id)}
-                onLike={() => handleLike(post.id, userLikes.has(post.id))}
-                onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
-                onDelete={() => handleDeletePost(post.id)}
-                onComment={handleCommentCreate}
-                onOpenShare={() => {
-                  setShareTargetPost(post)
-                  setShareNote(`Sharing @${post.profiles?.full_name || 'community'}: `)
-                  setNewPostContent('')
-                }}
-              />
-            ))
-          )}
-
-          {isLoadingMore && <><PostSkeleton /><PostSkeleton /></>}
-          <div ref={observerRef} className="h-6" />
+        {/* Posts */}
+        <div className="space-y-4">
+          {feedLoading && posts.length === 0 ? <><PostSkeleton /><PostSkeleton /></> : 
+           posts.length === 0 ? <div className="text-center py-20 text-muted-foreground">No posts found.</div> :
+           posts.map((post) => (
+             <PostCard 
+               key={post.id} 
+               post={post} 
+               isOwner={post.author_id === userId}
+               isLiked={userLikes.has(post.id)}
+               isBookmarked={userBookmarks.has(post.id)}
+               onLike={() => handleLike(post.id, userLikes.has(post.id))}
+               onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
+               onDelete={() => handleDeletePost(post.id)}
+             />
+           ))}
+          {isLoadingMore && <PostSkeleton />}
+          <div ref={observerRef} className="h-10" />
         </div>
       </main>
 
-      {/* Right sidebar — online / members */}
-      <aside className="hidden lg:block lg:col-span-3">
-        <Card className="sticky top-20">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'online' | 'members')}>
-            <TabsList className="w-full grid grid-cols-2">
-              <TabsTrigger value="online" className="text-xs"><UserCheck className="h-3 w-3 mr-1" />Online ({mergedOnlineUsers.length})</TabsTrigger>
-              <TabsTrigger value="members" className="text-xs"><Users className="h-3 w-3 mr-1" />Members ({members.length})</TabsTrigger>
-            </TabsList>
-            <TabsContent value="online" className="mt-0">
-              <ScrollArea className="h-[400px]">
-                <div className="p-2">
-                  {mergedOnlineUsers.length === 0
-                    ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
-                    : mergedOnlineUsers.map((member: any) => (
-                        <UserCard
-                          key={member.id}
-                          user={member}
-                          isOnline
-                          currentUserId={userId}
-                          initialIsFollowing={member.isFollowing ?? false}
-                          onFollowToggle={() => { mutateMembers(); mutateOnlineUsers() }}
-                        />
-                      ))}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value="members" className="mt-0">
-              <div className="p-2">
-                <div className="relative mb-2">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search members..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" />
-                </div>
-              </div>
-              <ScrollArea className="h-[500px]">
-                <div className="p-2 pt-0">
-                  {members.length === 0
-                    ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p>
-                    : members.map((member: any) => (
-                        <UserCard
-                          key={member.id}
-                          user={member}
-                          isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)}
-                          currentUserId={userId}
-                          initialIsFollowing={member.isFollowing ?? false}
-                          onFollowToggle={() => mutateMembers()}
-                        />
-                      ))}
-                </div>
-
-                {/* Discovery section */}
-                {discoverySuggestions.length > 0 && (
-                  <div className="px-2 pb-2">
-                    <div className="flex items-center gap-2 py-2 px-1">
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
-                        People you may know
-                      </span>
-                      <div className="h-px flex-1 bg-border" />
-                    </div>
-                    <div className="rounded-lg border bg-muted/20 overflow-hidden">
-                      {discoverySuggestions.map((suggestion: any) => (
-                        <UserCard
-                          key={suggestion.id}
-                          user={suggestion}
-                          isOnline={realtimeOnlineIds.has(suggestion.id) || onlineUsers.some((u: any) => u.id === suggestion.id)}
-                          currentUserId={userId}
-                          initialIsFollowing={false}
-                          onFollowToggle={() => { mutateMembers(); mutateDiscovery() }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+      {/* Right Sidebar */}
+      <aside className="hidden lg:block lg:col-span-3 space-y-6">
+        <Card className="sticky top-20 feed-glass border-border/40 shadow-sm">
+          <CardHeader className="pb-2 border-b border-border/40">
+             <h3 className="font-semibold flex items-center gap-2"><Users className="w-4 h-4 text-primary" /> Community</h3>
+          </CardHeader>
+          <CardContent className="p-0">
+             <ScrollArea className="h-[400px] p-2">
+                {members.slice(0, 10).map((member: any) => (
+                  <UserCard key={member.id} user={member} currentUserId={userId} isOnline={onlineUsers.some((u:any) => u.id === member.id)} onFollowToggle={() => mutateMembers()} />
+                ))}
+             </ScrollArea>
+          </CardContent>
         </Card>
       </aside>
-
-      {/* Share dialog */}
-      <Dialog open={!!shareTargetPost} onOpenChange={(open) => !open && setShareTargetPost(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Share post with note</DialogTitle></DialogHeader>
-          <Textarea
-            value={shareNote}
-            onChange={(e) => setShareNote(e.target.value)}
-            placeholder="Add context, mention people with @name, and share."
-            className="min-h-[100px]"
-          />
-          <Card className="bg-muted/40 border-dashed">
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Sharing from</p>
-              <p className="font-medium">{shareTargetPost?.profiles?.full_name || 'Community Member'}</p>
-              <p className="text-sm line-clamp-3 mt-1">{shareTargetPost?.content}</p>
-            </CardContent>
-          </Card>
-          <div className="flex justify-end">
-            <Button
-              onClick={() => {
-                setNewPostImage(null)
-                handlePostCreate({ asShare: true, sourcePost: shareTargetPost, contentOverride: shareNote.trim() })
-              }}
-              disabled={isPosting || !shareNote.trim()}
-            >
-              {isPosting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Repeat2 className="h-4 w-4 mr-2" />}Share post
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
 
-function PostCard({
-  post,
-  isOwner,
-  isLiked,
-  isBookmarked,
-  onLike,
-  onBookmark,
-  onDelete,
-  onComment,
-  onOpenShare,
-}: {
-  post: FeedPost
-  isOwner: boolean
-  isLiked: boolean
-  isBookmarked: boolean
-  onLike: () => void
-  onBookmark: () => void
-  onDelete: () => void
-  onComment: (postId: string, content: string, parentCommentId?: string) => Promise<void>
-  onOpenShare: () => void
-}) {
-  const [showComments, setShowComments] = useState(false)
-  const [commentInput, setCommentInput] = useState('')
-  const [replyPrefix, setReplyPrefix] = useState('')
-  const [replyToId, setReplyToId] = useState<string | null>(null)
+function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, onDelete }: any) {
   const [copied, setCopied] = useState(false)
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/feed?post=${post.id}`)
+    setCopied(true)
+    toast.success('Link copied')
+    setTimeout(() => setCopied(false), 2000)
+  }
 
-  const handleCopyLink = useCallback(() => {
-    const url = `${window.location.origin}/feed?post=${post.id}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      toast.success('Link copied to clipboard')
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {
-      toast.error('Failed to copy link')
-    })
-  }, [post.id])
-
-  const { data: commentsResponse, mutate: mutateComments } = useSWR<{ comments: PostComment[] }>(
-    showComments ? `/api/posts/${post.id}/comments` : null,
-    fetcher,
-    { revalidateOnFocus: false, keepPreviousData: true }
-  )
-  const comments = commentsResponse?.comments ?? []
-
-  const submitComment = async () => {
-    const payload = `${replyPrefix}${commentInput}`.trim()
-    if (!payload) return
-    const targetParentId = replyToId
-    const optimisticComment: PostComment = {
-      id: `temp-${Date.now()}`,
-      content: payload,
-      created_at: new Date().toISOString(),
-      author_id: 'self',
-      parent_comment_id: targetParentId ?? null,
-      author: { id: 'self', full_name: 'You', avatar_url: null, role: 'user' },
+  const getPostTypeIcon = (type: string) => {
+    switch (type) {
+      case 'quote': return <Quote className="h-3 w-3" />
+      case 'announcement': return <Megaphone className="h-3 w-3" />
+      case 'event': return <Calendar className="h-3 w-3" />
+      case 'prayer-request': return <HandHeart className="h-3 w-3" />
+      default: return null
     }
-    mutateComments((current) => ({ comments: [...(current?.comments ?? []), optimisticComment] }), false)
-    setCommentInput('')
-    setReplyPrefix('')
-    setReplyToId(null)
-    await onComment(post.id, payload, targetParentId || undefined)
-    mutateComments()
+  }
+
+  const getRoleColor = (role: string) => {
+    switch(role) {
+      case 'imam': return 'bg-amber-100 text-amber-800 border-amber-200'
+      case 'shura': return 'bg-teal-100 text-teal-800 border-teal-200'
+      case 'mosque': return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+      default: return 'bg-muted text-muted-foreground border-border'
+    }
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link href={`/profile/${post.author_id}`}>
-              <Avatar className="h-10 w-10">
-                <AvatarImage src={post.profiles?.avatar_url || undefined} alt={post.profiles?.full_name || undefined} />
-                <AvatarFallback>{post.profiles?.full_name?.[0] || 'U'}</AvatarFallback>
-              </Avatar>
-            </Link>
-            <div className="min-w-0">
-              <Link href={`/profile/${post.author_id}`} className="font-semibold hover:underline truncate block">{post.profiles?.full_name || 'Anonymous'}</Link>
-              <p className="text-xs text-muted-foreground truncate">
-                {post.profiles?.profession || post.profiles?.role || 'Community member'} · {post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-              </p>
-            </div>
+    <Card className="feed-glass border-border/40 shadow-sm post-enter overflow-hidden group">
+      <CardHeader className="p-4 pb-2">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+             <Link href={`/profile/${post.author_id}`}>
+                <Avatar className="h-11 w-11 hover:ring-2 hover:ring-primary/50 transition-all cursor-pointer">
+                   <AvatarImage src={post.profiles?.avatar_url} />
+                   <AvatarFallback className="bg-primary/10 text-primary font-bold">{post.profiles?.full_name?.[0]}</AvatarFallback>
+                </Avatar>
+             </Link>
+             <div>
+                <div className="flex items-center gap-1.5">
+                   <Link href={`/profile/${post.author_id}`} className="font-semibold text-[15px] hover:underline hover:text-primary transition-colors">
+                     {post.profiles?.full_name}
+                   </Link>
+                   {post.profiles?.verified && <CheckCircle className="h-4 w-4 text-primary fill-primary/10" />}
+                   {post.profiles?.role !== 'user' && post.profiles?.role && (
+                     <Badge variant="outline" className={cn("text-[10px] px-1.5 h-4 ml-1", getRoleColor(post.profiles.role))}>
+                        {post.profiles.role.toUpperCase()}
+                     </Badge>
+                   )}
+                </div>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                   {post.created_at ? formatDistanceToNow(new Date(post.created_at)) + ' ago' : 'Just now'}
+                   {post.visibility !== 'public' && <span className="opacity-70">&middot; {post.visibility}</span>}
+                </p>
+             </div>
           </div>
-          {isOwner && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl border-border/50">
+              <DropdownMenuItem onClick={handleCopyLink}><Link2 className="h-4 w-4 mr-2" /> Copy link</DropdownMenuItem>
+              {isOwner && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onDelete} className="text-destructive focus:bg-destructive/10"><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
+      
+      <CardContent className="px-4 py-2">
+         {post.post_type !== 'text' && (
+           <Badge variant="secondary" className="mb-3 capitalize gap-1.5 rounded-full px-2.5 py-0.5 border-primary/20 bg-primary/5 text-primary text-xs">
+             {getPostTypeIcon(post.post_type)} {post.post_type.replace('-',' ')}
+           </Badge>
+         )}
+         
+         <div className="text-[15px] leading-relaxed whitespace-pre-wrap font-normal">{post.content}</div>
+         
+         {post.quoteSource && (
+           <p className="mt-3 text-sm italic text-muted-foreground border-l-2 border-primary/30 pl-3 py-1">
+              — {post.quoteSource}
+           </p>
+         )}
 
-      <CardContent className="space-y-3">
-        <p className="whitespace-pre-wrap leading-relaxed">{post.content}</p>
-
-        {post.metadata?.shared_post_id && (
-          <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm">
-            <p className="text-muted-foreground">Shared post</p>
-            <p className="font-medium">{String(post.metadata.shared_author_name || 'Community member')}</p>
-            <p className="line-clamp-2">{String(post.metadata.shared_post_excerpt || 'View original content')}</p>
-          </div>
-        )}
-
-        {post.image_url && (
-          <div className="w-full aspect-video rounded-lg overflow-hidden">
-            <img src={post.image_url} alt="Post image" className="h-full w-full object-cover" />
-          </div>
-        )}
-
-        <div className="flex items-center justify-between border-y py-2 text-xs text-muted-foreground">
-          <span>{post.likes_count} likes</span>
-          <span>{post.comments_count} comments</span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn('gap-2 group transition-all active:scale-95', isLiked && 'text-red-500')}
-            onClick={onLike}
-          >
-            <Heart className={cn('h-4 w-4 transition-transform group-hover:scale-110', isLiked && 'fill-current animate-in zoom-in-50')} />
-            Like
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowComments((v) => !v)}>
-            <MessageCircle className="h-4 w-4" />Comment
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}>
-            <Share2 className="h-4 w-4" />Share
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn('gap-2 transition-colors', copied && 'text-green-600')}
-            onClick={handleCopyLink}
-            title="Copy link to post"
-          >
-            {copied ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-            {copied ? 'Copied!' : 'Copy link'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn('gap-2', isBookmarked && 'text-primary')}
-            onClick={onBookmark}
-          >
-            <Bookmark className={cn('h-4 w-4', isBookmarked && 'fill-current')} />
-            Bookmark
-          </Button>
-        </div>
-
-        {showComments && (
-          <div className="space-y-3 border-t pt-3">
-            {replyPrefix && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Reply className="h-3.5 w-3.5" />
-                <span>Replying to <strong>{replyPrefix.trim()}</strong></span>
-                <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => { setReplyPrefix(''); setReplyToId(null) }}>Clear</Button>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Input
-                value={commentInput}
-                onChange={(e) => setCommentInput(e.target.value)}
-                placeholder="Comment… use @name and hit Enter"
-                onKeyDown={(e) => e.key === 'Enter' && submitComment()}
-              />
-              <Button onClick={submitComment} disabled={!commentInput.trim()}><Send className="h-4 w-4" /></Button>
-            </div>
-            {comments.filter((c) => !c.parent_comment_id).map((comment) => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
-                allComments={comments}
-                onReply={(prefix, parentId) => {
-                  setReplyPrefix(prefix)
-                  setReplyToId(parentId)
-                  setCommentInput('')
-                }}
-              />
-            ))}
-          </div>
-        )}
+         {post.image_url && (
+           <div className="mt-4 -mx-4 sm:mx-0 overflow-hidden sm:rounded-xl">
+             <img src={post.image_url} className="w-full object-cover max-h-[500px] hover:opacity-95 transition-opacity" loading="lazy" alt="Post attachment" />
+           </div>
+         )}
       </CardContent>
-    </Card>
-  )
-}
 
-function CommentItem({
-  comment,
-  allComments,
-  onReply,
-}: {
-  comment: any
-  allComments: any[]
-  onReply: (prefix: string, parentId: string) => void
-}) {
-  const replies = allComments.filter((c) => c.parent_comment_id === comment.id)
-  return (
-    <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200 mt-3">
-      <div className="group rounded-md bg-muted/40 p-3 hover:bg-muted/60 transition-colors border border-transparent hover:border-primary/10 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-1">
-          <div className="flex items-center gap-2">
-            <Avatar className="h-5 w-5">
-              <AvatarImage src={comment.author?.avatar_url} />
-              <AvatarFallback className="text-[10px] bg-primary/10">{comment.author?.full_name?.[0] || 'U'}</AvatarFallback>
-            </Avatar>
-            <Link href={`/profile/${comment.author_id}`} className="text-xs font-semibold hover:underline">
-              {comment.author?.full_name || 'Member'}
-            </Link>
-          </div>
-          <button
-            className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-medium opacity-0 group-hover:opacity-100"
-            onClick={() => onReply(`@${comment.author?.full_name || 'member'} `, comment.id)}
-          >
-            Reply
-          </button>
-        </div>
-        <p className="text-sm pl-7 whitespace-pre-wrap leading-relaxed">{comment.content}</p>
-      </div>
-      {replies.length > 0 && (
-        <div className="pl-6 space-y-3 border-l-2 border-muted/50 ml-2.5">
-          {replies.map((reply) => (
-            <CommentItem key={reply.id} comment={reply} allComments={allComments} onReply={onReply} />
-          ))}
-        </div>
-      )}
-    </div>
+      <CardFooter className="px-4 py-3 flex items-center justify-between border-t border-border/30 bg-muted/10">
+         <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className={cn("rounded-full gap-2 px-3 hover:bg-rose-500/10 hover:text-rose-600 transition-colors", isLiked && "text-rose-600")} onClick={onLike}>
+               <Heart className={cn("h-4 w-4", isLiked && "fill-rose-600 like-bounce")} />
+               <span className="text-xs font-medium">{post.likes_count > 0 ? post.likes_count : 'Like'}</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-full gap-2 px-3 hover:bg-blue-500/10 hover:text-blue-600 transition-colors">
+               <MessageCircle className="h-4 w-4" />
+               <span className="text-xs font-medium">{post.comments_count > 0 ? post.comments_count : 'Comment'}</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-full hidden sm:flex gap-2 px-3 hover:bg-green-500/10 hover:text-green-600 transition-colors" onClick={handleCopyLink}>
+               <Share2 className="h-4 w-4" />
+               <span className="text-xs font-medium">Share</span>
+            </Button>
+         </div>
+         <Button variant="ghost" size="icon" className={cn("rounded-full h-8 w-8 hover:bg-primary/10 hover:text-primary transition-colors", isBookmarked && "text-primary")} onClick={onBookmark}>
+            <Bookmark className={cn("h-4 w-4", isBookmarked && "fill-current")} />
+         </Button>
+      </CardFooter>
+    </Card>
   )
 }

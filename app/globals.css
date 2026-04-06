@@ -133,21 +133,38 @@
   .feed-refresh-glow {
     animation: feed-refresh-glow 1.6s ease-in-out infinite;
   }
+
+  .like-bounce {
+    animation: like-bounce 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .post-enter {
+    animation: post-enter 0.35s ease-out both;
+  }
+
+  .feed-glass {
+    background: oklch(from var(--card) l c h / 0.8);
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  }
 }
 
 @keyframes feed-refresh-glow {
-  0% {
-    transform: translateX(-120%);
-    opacity: 0;
-  }
-  25% {
-    opacity: 0.35;
-  }
-  75% {
-    opacity: 0.2;
-  }
-  100% {
-    transform: translateX(220%);
-    opacity: 0;
-  }
+  0% { transform: translateX(-120%); opacity: 0; }
+  25% { opacity: 0.35; }
+  75% { opacity: 0.2; }
+  100% { transform: translateX(220%); opacity: 0; }
+}
+
+@keyframes like-bounce {
+  0%, 100% { transform: scale(1); }
+  15% { transform: scale(1.35); }
+  30% { transform: scale(0.9); }
+  50% { transform: scale(1.15); }
+  70% { transform: scale(0.97); }
+}
+
+@keyframes post-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
