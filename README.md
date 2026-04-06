@@ -82,3 +82,29 @@ This branch is ready to merge to `main` with the currently implemented features,
 - Middleware and route fixes needed for Vercel production builds
 
 Note: Google social sign-in UI is not included yet in this scope. To add Google auth, enable Google in the Clerk Dashboard and then wire the social button flow in the sign-in/sign-up pages.
+
+
+## Database setup for real mosque + feed data
+
+Run the SQL scripts in Supabase SQL Editor (or via psql) in this order:
+
+```sql
+-- 1) Create/update all core tables
+\i scripts/production_schema.sql
+
+-- 2) Seed real data (4 mosques + profiles + posts)
+\i scripts/seed_real_data.sql
+```
+
+After seeding, the following are available and fully CRUD-enabled through API routes:
+
+- Mosque registration + listing
+  - `GET /api/mosques`
+  - `POST /api/mosques` (authenticated users can submit; admin/shura can auto-verify)
+  - `PATCH /api/mosques/:id`
+  - `DELETE /api/mosques/:id`
+- Feed posts
+  - `GET /api/feed/posts`
+  - `POST /api/feed/posts`
+  - `PATCH /api/feed/posts/:id`
+  - `DELETE /api/feed/posts/:id`

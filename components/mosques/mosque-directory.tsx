@@ -39,8 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { mockMosques, getNearbyMosques } from '@/lib/data'
-import type { Mosque } from '@/lib/types'
+import type { Mosque } from '@/lib/database.types'
 
 const allFacilities = [
   'Prayer Hall',
@@ -132,7 +131,7 @@ export function MosqueDirectory() {
         result.sort((a, b) => (b.capacity || 0) - (a.capacity || 0))
         break
       case 'established':
-        result.sort((a, b) => (a.establishedYear || 0) - (b.establishedYear || 0))
+        result.sort((a, b) => (a.established_year || 0) - (b.established_year || 0))
         break
     }
 
@@ -164,8 +163,7 @@ export function MosqueDirectory() {
           lng: position.coords.longitude,
         }
         setLocation(coords)
-        const nearby = getNearbyMosques(coords.lat, coords.lng, radius)
-        setNearbyMosques(nearby)
+        setNearbyMosques(getNearbyMosques(coords.lat, coords.lng, radius, mosques))
         setLocationLoading(false)
       },
       (err) => {
@@ -190,10 +188,9 @@ export function MosqueDirectory() {
 
   useEffect(() => {
     if (location) {
-      const nearby = getNearbyMosques(location.lat, location.lng, radius)
-      setNearbyMosques(nearby)
+      setNearbyMosques(getNearbyMosques(location.lat, location.lng, radius, mosques))
     }
-  }, [radius, location])
+  }, [radius, location, mosques])
 
   const handleDirections = (mosque: NearbyMosque) => {
     const url = `https://www.google.com/maps/dir/?api=1&origin=${location?.lat},${location?.lng}&destination=${mosque.latitude},${mosque.longitude}`
@@ -441,7 +438,7 @@ export function MosqueDirectory() {
                                   <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
                                     {mosque.name}
                                   </h3>
-                                  {mosque.isVerified && (
+                                  {mosque.is_verified && (
                                     <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
                                   )}
                                 </div>
@@ -465,7 +462,7 @@ export function MosqueDirectory() {
                                 </div>
 
                                 <div className="mt-2 flex flex-wrap gap-1">
-                                  {mosque.facilities.slice(0, 4).map((facility) => (
+                                  {(mosque.facilities ?? []).slice(0, 4).map((facility) => (
                                     <Badge key={facility} variant="outline" className="text-xs font-normal">
                                       {facility}
                                     </Badge>
@@ -515,7 +512,7 @@ function MosqueCard({ mosque }: { mosque: Mosque }) {
               </div>
            </div>
            <div className="absolute top-4 right-4">
-              {mosque.isVerified && (
+              {mosque.is_verified && (
                 <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 backdrop-blur-md px-2 py-0.5 rounded-lg flex items-center gap-1 font-black text-[10px] uppercase tracking-widest">
                    <CheckCircle className="h-3 w-3" />
                    Verified
@@ -555,14 +552,14 @@ function MosqueCard({ mosque }: { mosque: Mosque }) {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-1.5">
-            {mosque.facilities.slice(0, 3).map((facility: string) => (
+            {(mosque.facilities ?? []).slice(0, 3).map((facility: string) => (
               <Badge key={facility} variant="outline" className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border-border/60 text-muted-foreground/70">
                 {facility}
               </Badge>
             ))}
-            {mosque.facilities.length > 3 && (
+            {(mosque.facilities ?? []).length > 3 && (
               <Badge variant="outline" className="text-[10px] font-bold text-primary/60 border-primary/20">
-                +{mosque.facilities.length - 3}
+                +{(mosque.facilities ?? []).length - 3}
               </Badge>
             )}
           </div>
@@ -572,7 +569,7 @@ function MosqueCard({ mosque }: { mosque: Mosque }) {
   )
 }
 
-function MosqueListItem({ mosque }: { mosque: typeof mockMosques[0] }) {
+function MosqueListItem({ mosque }: { mosque: Mosque }) {
   return (
     <Link href={`/mosques/${mosque.id}`}>
       <Card className="group overflow-hidden border-border/50 transition-all hover:border-primary/30 hover:shadow-md">
@@ -586,7 +583,7 @@ function MosqueListItem({ mosque }: { mosque: typeof mockMosques[0] }) {
               <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
                 {mosque.name}
               </h3>
-              {mosque.isVerified && (
+              {mosque.is_verified && (
                 <CheckCircle className="h-4 w-4 text-primary" />
               )}
             </div>
@@ -609,14 +606,14 @@ function MosqueListItem({ mosque }: { mosque: typeof mockMosques[0] }) {
             </div>
 
             <div className="mt-2 flex flex-wrap gap-1">
-              {mosque.facilities.slice(0, 5).map((facility) => (
+              {(mosque.facilities ?? []).slice(0, 5).map((facility: string) => (
                 <Badge key={facility} variant="outline" className="text-xs font-normal">
                   {facility}
                 </Badge>
               ))}
-              {mosque.facilities.length > 5 && (
+              {(mosque.facilities ?? []).length > 5 && (
                 <Badge variant="outline" className="text-xs font-normal">
-                  +{mosque.facilities.length - 5}
+                  +{(mosque.facilities ?? []).length - 5}
                 </Badge>
               )}
             </div>
@@ -649,3 +646,31 @@ function MosqueIcon({ className }: { className?: string }) {
   )
 }
 
+
+
+function getNearbyMosques(userLat: number, userLng: number, radiusMiles: number, mosques: Mosque[]): NearbyMosque[] {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const earthRadiusInMiles = 3958.8
+    const dLat = toRadians(lat2 - lat1)
+    const dLon = toRadians(lon2 - lon1)
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return earthRadiusInMiles * c
+  }
+
+  return mosques
+    .filter((mosque) => mosque.latitude !== null && mosque.longitude !== null)
+    .map((mosque) => ({
+      ...mosque,
+      distance: calculateDistance(userLat, userLng, mosque.latitude as number, mosque.longitude as number),
+    }))
+    .filter((mosque) => mosque.distance <= radiusMiles)
+    .sort((a, b) => a.distance - b.distance)
+}
