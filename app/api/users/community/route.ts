@@ -66,9 +66,12 @@ export async function GET(request: Request) {
         }
 
         // Deduplicate and exclude already-followed users
+        type ProfileShape = { id: string; full_name: string | null; avatar_url: string | null; bio: string | null; profession: string | null; role: string }
         const seen = new Set<string>()
         for (const row of fofRows ?? []) {
-          const profile = row.profiles as { id: string; full_name: string | null; avatar_url: string | null; bio: string | null; profession: string | null; role: string } | null
+          // Supabase returns joined relations as arrays; take the first element
+          const profilesRaw = row.profiles as ProfileShape | ProfileShape[] | null
+          const profile: ProfileShape | null = Array.isArray(profilesRaw) ? (profilesRaw[0] ?? null) : profilesRaw
           if (!profile) continue
           if (alreadyFollowingIds.has(profile.id)) continue
           if (profile.id === user.id) continue
