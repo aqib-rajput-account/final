@@ -20,8 +20,8 @@ This is a Connect Mosque Project of our Community.
      - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
      - `SUPABASE_SERVICE_ROLE_KEY`
    - Optional Stream-powered message feed:
-     - `NEXT_PUBLIC_STREAM_API_KEY`
-     - `STREAM_API_SECRET`
+     - `STREAM_API_KEY`
+     - `STREAM_SECRET_KEY`
      - `STREAM_FEED_GROUP` (default: `timeline`)
      - `STREAM_FEED_ID` (default: `global`)
 

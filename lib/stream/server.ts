@@ -3,11 +3,11 @@ import crypto from "crypto";
 const STREAM_API_BASE = "https://api.stream-io-api.com/api/v1.0";
 
 export function getStreamConfig() {
-  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
-  const apiSecret = process.env.STREAM_API_SECRET;
+  const apiKey = process.env.STREAM_API_KEY;
+  const apiSecret = process.env.STREAM_SECRET_KEY;
 
   if (!apiKey || !apiSecret) {
-    throw new Error("Stream feed is not configured. Missing NEXT_PUBLIC_STREAM_API_KEY or STREAM_API_SECRET.");
+    throw new Error("Stream feed is not configured. Missing STREAM_API_KEY or STREAM_SECRET_KEY.");
   }
 
   return {
