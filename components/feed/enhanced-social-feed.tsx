@@ -188,8 +188,17 @@ export function EnhancedSocialFeed() {
   const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
   const { data: membersData, mutate: mutateMembers } = useSWR(userId ? '/api/users/community' : null, fetcher)
 
+  const lastStablePosts = useRef<FeedPost[]>([])
   const posts = useMemo(() => {
     let allPosts = feedPages?.flatMap((page) => page.data) ?? []
+    
+    // If we have no data from SWR but we have stable posts from before, and we are validating, keep them.
+    if (allPosts.length === 0 && lastStablePosts.current.length > 0 && feedValidating) {
+      allPosts = lastStablePosts.current
+    } else if (allPosts.length > 0) {
+      lastStablePosts.current = allPosts
+    }
+
     if (postSearchQuery.trim()) {
       const q = postSearchQuery.toLowerCase()
       return allPosts.filter((p: FeedPost) => 
@@ -198,7 +207,7 @@ export function EnhancedSocialFeed() {
       )
     }
     return allPosts
-  }, [feedPages, postSearchQuery])
+  }, [feedPages, postSearchQuery, feedValidating])
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
@@ -283,10 +292,9 @@ export function EnhancedSocialFeed() {
   }, [mutateMembers, mutateOnlineUsers, patchFeed])
 
   const refreshFeedPosts = useCallback(async () => {
-    await mutateFeed()
     setHasPendingRealtimeRefresh(false)
     setNewPostsCount(0)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    await mutateFeed()
   }, [mutateFeed])
 
   useEffect(() => {
@@ -658,24 +666,27 @@ export function EnhancedSocialFeed() {
             </div>
           )}
           {newPostsCount > 0 && (
-            <div className="sticky top-20 z-20 flex justify-center animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="sticky top-20 z-20 flex justify-center py-2 animate-in fade-in slide-in-from-top-4 duration-500">
               <Button 
                 variant="default" 
                 size="sm" 
-                className="rounded-full shadow-lg bg-primary text-primary-foreground font-medium px-6 py-5 gap-2 border-none"
+                className="rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-6 gap-3 border-none ring-4 ring-background transform hover:scale-105 transition-all"
                 onClick={() => { void refreshFeedPosts() }}
               >
-                <ArrowUp className="h-4 w-4" />
-                {newPostsCount} new {newPostsCount === 1 ? 'post' : 'posts'} available
+                <div className="flex -space-x-2 mr-1">
+                   <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                </div>
+                {newPostsCount} {newPostsCount === 1 ? 'New Post' : 'New Posts'}
+                <ArrowUp className="h-4 w-4 animate-bounce" />
               </Button>
             </div>
           )}
-          {feedLoading ? (
-            <>
+          {(feedLoading && posts.length === 0) ? (
+            <div className="space-y-4">
               <PostSkeleton />
               <PostSkeleton />
               <PostSkeleton />
-            </>
+            </div>
           ) : posts.length === 0 ? (
             <Card><CardContent className="p-8 text-center"><MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><h3 className="font-semibold mb-2">No posts yet</h3><p className="text-muted-foreground">Be the first to share something with the community!</p></CardContent></Card>
           ) : (
