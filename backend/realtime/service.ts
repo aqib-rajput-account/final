@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { PublishRealtimeEventInput, RealtimeEventEnvelope } from './types'
 import { REALTIME_EVENT_VERSION } from './types'
 import { getMutedAndBlockedUserIds } from '@/backend/safety/service'
+import { logWithTrace, observeCounter, observeHistogram } from '@/lib/infrastructure/observability'
 
 export function buildRealtimeChannels(input: { targetUserIds?: string[]; feedStreamId?: string }): string[] {
   const channels = new Set<string>()
@@ -45,6 +46,7 @@ async function broadcastToChannels(envelope: RealtimeEventEnvelope): Promise<voi
 export async function publishRealtimeEvent<TPayload extends Record<string, unknown>>(
   input: PublishRealtimeEventInput<TPayload>
 ): Promise<RealtimeEventEnvelope<TPayload>> {
+  const startedAt = Date.now()
   const supabase = await createClient()
   const filteredTargetUserIds = await filterTargetUserIdsForActor(input.actorUserId, input.targetUserIds ?? [])
   const channels = buildRealtimeChannels({
@@ -92,6 +94,26 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
   }
 
   await broadcastToChannels(envelope)
+  const traceId =
+    (typeof envelope.payload?.traceId === 'string' && envelope.payload.traceId) ||
+    `realtime:${envelope.idempotencyKey}`
+  observeCounter('realtime.events.published.total', 1, {
+    eventType: envelope.eventType,
+    entityType: envelope.entityType,
+  })
+  observeHistogram('realtime.events.publish_latency_ms', Date.now() - startedAt, {
+    eventType: envelope.eventType,
+  })
+  logWithTrace({
+    traceId,
+    message: 'Realtime event published',
+    tags: {
+      eventType: envelope.eventType,
+      entityType: envelope.entityType,
+      entityId: envelope.entityId,
+      channelCount: envelope.channels.length,
+    },
+  })
 
   return envelope
 }
@@ -102,6 +124,7 @@ export async function listRealtimeEventsSince(input: {
   feedStreamId?: string
   limit?: number
 }): Promise<RealtimeEventEnvelope[]> {
+  const startedAt = Date.now()
   const supabase = await createClient()
   const lastSeenEventId = input.lastSeenEventId ?? 0
   const limit = Math.max(1, Math.min(input.limit ?? 200, 1000))
@@ -132,7 +155,7 @@ export async function listRealtimeEventsSince(input: {
 
   const hiddenUserIds = await getMutedAndBlockedUserIds(supabase, input.userId)
 
-  return (data ?? [])
+  const events = (data ?? [])
     .filter((event) => {
       if (hiddenUserIds.has(event.actor_user_id)) return false
 
@@ -155,4 +178,10 @@ export async function listRealtimeEventsSince(input: {
       channels: event.channels ?? [],
       payload: (event.payload ?? {}) as Record<string, unknown>,
     }))
+
+  observeHistogram('realtime.events.read_latency_ms', Date.now() - startedAt, {
+    hasFeedStream: Boolean(input.feedStreamId),
+  })
+  observeCounter('realtime.events.read.total', events.length)
+  return events
 }
