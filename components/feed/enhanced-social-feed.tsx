@@ -245,10 +245,11 @@ export function EnhancedSocialFeed() {
     revalidateAll: false,
     dedupingInterval: 3000,
     refreshInterval: 0,
+    keepPreviousData: true,
   })
 
-  const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
-  const { data: discoveryData, mutate: mutateDiscovery } = useSWR(userId ? '/api/users/community?mode=discovery' : null, fetcher)
+  const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher, { keepPreviousData: true })
+  const { data: discoveryData, mutate: mutateDiscovery } = useSWR(userId ? '/api/users/community?mode=discovery' : null, fetcher, { keepPreviousData: true })
   const membersUrl = useMemo(() => {
     if (!userId) return null
     const params = new URLSearchParams()
@@ -256,16 +257,19 @@ export function EnhancedSocialFeed() {
     const qs = params.toString()
     return qs ? `/api/users/community?${qs}` : '/api/users/community'
   }, [userId, debouncedSearch])
-  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher)
+  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher, { keepPreviousData: true })
 
   const lastStablePosts = useRef<FeedPost[]>([])
   const posts = useMemo(() => {
     let allPosts = feedPages?.flatMap((page) => page.data) ?? []
-    if (allPosts.length === 0 && lastStablePosts.current.length > 0 && (feedValidating || feedLoading)) {
+    
+    // If we have no posts right now, use the last stable posts to prevent a white-out blink
+    if (allPosts.length === 0 && lastStablePosts.current.length > 0) {
       allPosts = lastStablePosts.current
     } else if (allPosts.length > 0) {
       lastStablePosts.current = allPosts
     }
+
     if (postSearchQuery.trim()) {
       const q = postSearchQuery.toLowerCase()
       return allPosts.filter((p) =>
@@ -274,7 +278,7 @@ export function EnhancedSocialFeed() {
       )
     }
     return allPosts
-  }, [feedPages, postSearchQuery, feedValidating, feedLoading])
+  }, [feedPages, postSearchQuery])
 
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
@@ -798,7 +802,7 @@ export function EnhancedSocialFeed() {
             </div>
           )}
 
-          {feedLoading && posts.length === 0 ? (
+          {feedLoading && posts.length === 0 && !feedPages ? (
             <div className="space-y-4">
               <PostSkeleton /><PostSkeleton /><PostSkeleton />
             </div>
@@ -990,7 +994,7 @@ function PostCard({
   const { data: commentsResponse, mutate: mutateComments } = useSWR<{ comments: PostComment[] }>(
     showComments ? `/api/posts/${post.id}/comments` : null,
     fetcher,
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, keepPreviousData: true }
   )
   const comments = commentsResponse?.comments ?? []
 
