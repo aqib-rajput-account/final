@@ -134,3 +134,16 @@ This project now includes real-time subscriptions/presence so feed and profile d
   - `lib/hooks/use-webrtc-signaling.ts` uses Supabase broadcast channels for offer/answer/ICE signaling transport.
 
 > Note: for Realtime to work, make sure these tables are in your `supabase_realtime` publication.
+
+## Infrastructure scaling defaults
+
+This project includes first-pass infrastructure hardening for growth:
+
+- CDN-aware static/media delivery (`NEXT_PUBLIC_CDN_URL`, `NEXT_PUBLIC_CDN_HOST`, `NEXT_PUBLIC_MEDIA_CDN_HOST`)
+- Edge-cached public profile cards
+- Redis+memory hot caching for timelines and profile snippets
+- Worker queue hooks for fan-out, notifications, and counter aggregation
+- Write-endpoint backpressure via rate limits
+- Service SLO and autoscaling trigger definitions for API/realtime/workers
+
+See `docs/infrastructure-scaling.md` for details.

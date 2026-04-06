@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveAuthenticatedUserId } from "@/backend/auth/request-auth";
 import { resolveIdempotencyKey } from "@/backend/realtime/idempotency";
 import { publishRealtimeEvent } from "@/backend/realtime/service";
+import { enforceRateLimit } from "@/lib/infrastructure/rate-limit";
+import { enqueueWork } from "@/lib/infrastructure/queue";
 
 export async function GET(
   request: NextRequest,
@@ -47,6 +49,20 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rateLimit = await enforceRateLimit({
+      namespace: "comment-write",
+      identifier: userId,
+      windowSeconds: 60,
+      maxRequests: 20,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", retryAfterSeconds: rateLimit.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+      );
+    }
+
     const body = await request.json();
     const { content } = body;
 
@@ -85,6 +101,25 @@ export async function POST(
       payload: {
         postId,
         commentId: comment.id,
+      },
+    });
+
+    await enqueueWork({
+      queue: "notifications",
+      taskType: "notifications.comment.created",
+      payload: {
+        postId,
+        commentId: String(comment.id),
+        actorUserId: userId,
+      },
+    });
+
+    await enqueueWork({
+      queue: "counter-aggregation",
+      taskType: "counters.comment.created",
+      payload: {
+        postId,
+        commentId: String(comment.id),
       },
     });
 
