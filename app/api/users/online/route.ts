@@ -15,15 +15,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get online users (active in last 5 minutes)
+    // Get online users (active in last 5 minutes), including the current user.
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60000).toISOString()
     
     const { data: onlineUsers, error } = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url, bio, profession, role')
-      .neq('id', user.id)
       .gte('last_seen_at', fiveMinutesAgo)
-      .limit(10)
+      .limit(50)
       .order('last_seen_at', { ascending: false })
 
     if (error) {

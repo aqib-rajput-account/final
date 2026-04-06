@@ -139,7 +139,7 @@ function UserCard({ user: member, isOnline = false }: { user: any; isOnline?: bo
 }
 
 export function EnhancedSocialFeed() {
-  const { userId, profile } = useAuth()
+  const { userId, profile, resolvedRole } = useAuth()
   const [newPostContent, setNewPostContent] = useState('')
   const [newPostImage, setNewPostImage] = useState<string | null>(null)
   const [isPosting, setIsPosting] = useState(false)
@@ -171,7 +171,10 @@ export function EnhancedSocialFeed() {
     isValidating: feedValidating,
   } = useSWRInfinite<FeedPage>(getKey, fetcher, {
     revalidateFirstPage: false,
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    keepPreviousData: true,
+    persistSize: true,
     dedupingInterval: 3000,
   })
 
@@ -203,8 +206,17 @@ export function EnhancedSocialFeed() {
     const byId = new Map<string, any>()
     onlineUsers.forEach((member: any) => byId.set(member.id, member))
     members.filter((member: any) => realtimeOnlineIds.has(member.id)).forEach((member: any) => byId.set(member.id, member))
+    if (userId && (realtimeOnlineIds.has(userId) || onlineUsers.some((member: any) => member.id === userId))) {
+      byId.set(userId, {
+        id: userId,
+        full_name: profile?.full_name || 'You',
+        avatar_url: profile?.avatar_url || null,
+        profession: (profile as any)?.profession || null,
+        role: resolvedRole || profile?.role || 'member',
+      })
+    }
     return Array.from(byId.values())
-  }, [members, onlineUsers, realtimeOnlineIds])
+  }, [members, onlineUsers, profile, realtimeOnlineIds, resolvedRole, userId])
 
   const patchFeed = useCallback((fn: (post: FeedPost) => FeedPost) => {
     mutateFeed((pages) => {
@@ -300,8 +312,14 @@ export function EnhancedSocialFeed() {
       formData.append('file', file)
       const response = await fetch('/api/upload', { method: 'POST', body: formData })
       if (!response.ok) throw new Error('Upload failed')
-      const { pathname } = await response.json()
-      setNewPostImage(`/api/file?pathname=${encodeURIComponent(pathname)}`)
+      const { url, pathname } = await response.json()
+      const imageUrl = typeof url === 'string' && url.length > 0
+        ? url
+        : pathname
+          ? `/api/file?pathname=${encodeURIComponent(pathname)}`
+          : null
+      if (!imageUrl) throw new Error('Upload completed but no image URL was returned')
+      setNewPostImage(imageUrl)
       toast.success('Image uploaded')
     } catch (error: any) {
       toast.error(error.message || 'Failed to upload image')
@@ -493,7 +511,7 @@ export function EnhancedSocialFeed() {
               </Avatar>
               <h3 className="font-semibold text-lg">{profile?.full_name || 'Welcome!'}</h3>
               <p className="text-sm text-muted-foreground mb-2">{(profile as any)?.profession || 'Community Member'}</p>
-              <Badge variant="secondary" className="capitalize">{profile?.role || 'member'}</Badge>
+              <Badge variant="secondary" className="capitalize">{resolvedRole || profile?.role || 'member'}</Badge>
               <div className="w-full mt-6 pt-4 border-t space-y-2">
                 <Link href="/profile" className="block"><Button variant="outline" className="w-full" size="sm">View Profile</Button></Link>
                 <Link href="/settings" className="block"><Button variant="ghost" className="w-full" size="sm">Settings</Button></Link>

@@ -15,12 +15,11 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get community members (limit to 20)
+    // Get community members (include current user so feed sidebar can always show "You")
     const { data: members, error } = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url, bio, profession, role')
-      .neq('id', user.id)
-      .limit(20)
+      .limit(100)
       .order('created_at', { ascending: false })
 
     if (error) {
