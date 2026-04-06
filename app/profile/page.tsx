@@ -30,6 +30,7 @@ export default function ProfilePage() {
   const { profile, userId, isSignedIn, loading: authLoading, refreshProfile, resolvedRole } = useAuth();
   const [saving, setSaving] = useState(false);
   const [bootstrappingProfile, setBootstrappingProfile] = useState(false);
+  const [emailVerifiedOverride, setEmailVerifiedOverride] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
@@ -123,7 +124,7 @@ export default function ProfilePage() {
       .slice(0, 2);
   };
 
-  const isEmailVerified = Boolean(profile?.is_verified);
+  const isEmailVerified = emailVerifiedOverride || Boolean(profile?.is_verified);
 
   if (authLoading) {
     return (
@@ -349,7 +350,7 @@ export default function ProfilePage() {
                     <p className="font-medium">Email Address</p>
                     <p className="text-sm text-muted-foreground">{profile.email}</p>
                     {!isEmailVerified && hasClerkPublishableKey && (
-                      <EmailVerificationButton />
+                      <EmailVerificationButton onVerified={() => setEmailVerifiedOverride(true)} />
                     )}
                   </div>
                   <Badge variant={isEmailVerified ? "default" : "secondary"}>
@@ -390,7 +391,7 @@ export default function ProfilePage() {
   );
 }
 
-function EmailVerificationButton() {
+function EmailVerificationButton({ onVerified }: { onVerified: () => void }) {
   const { user } = useUser();
   const { refreshProfile } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
@@ -446,6 +447,7 @@ function EmailVerificationButton() {
         await refreshProfile();
         setShowCodeInput(false);
         setVerificationCode("");
+        onVerified();
         toast.success("Email verified successfully.");
       } else {
         toast.error("Verification is not complete yet. Please try again.");

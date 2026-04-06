@@ -122,11 +122,6 @@ export default function SignInPage() {
                           Google
                         </Button>
                       </Clerk.Connection>
-                      <SignIn.SupportedStrategy name="email_code" asChild>
-                        <Button variant="outline" className="w-full h-11">
-                          Email code
-                        </Button>
-                      </SignIn.SupportedStrategy>
                       <SignIn.SupportedStrategy name="password" asChild>
                         <Button variant="outline" className="w-full h-11">
                           Password
@@ -194,64 +189,6 @@ export default function SignInPage() {
                     </Card>
                   </SignIn.Strategy>
 
-                  <SignIn.Strategy name="email_code">
-                    <Card className="shadow-lg">
-                      <CardHeader className="space-y-1 pb-4">
-                        <CardTitle className="text-xl">Check your email</CardTitle>
-                        <CardDescription>
-                          We sent a verification code to your email
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <Clerk.Field name="code" className="space-y-2">
-                          <Clerk.Label asChild>
-                            <Label>Verification code</Label>
-                          </Clerk.Label>
-                          <Clerk.Input type="otp" required asChild>
-                            <Input placeholder="Enter 6-digit code" className="text-center tracking-widest" />
-                          </Clerk.Input>
-                          <Clerk.FieldError className="text-sm text-destructive" />
-                        </Clerk.Field>
-
-                        <Clerk.GlobalError className="text-sm text-destructive" />
-
-                        <SignIn.Action submit asChild>
-                          <Button className="w-full h-11" disabled={isGlobalLoading}>
-                            <Clerk.Loading>
-                              {(isLoading) =>
-                                isLoading ? (
-                                  <Spinner className="h-4 w-4" />
-                                ) : (
-                                  "Verify"
-                                )
-                              }
-                            </Clerk.Loading>
-                          </Button>
-                        </SignIn.Action>
-
-                        <SignIn.Action
-                          resend
-                          asChild
-                          fallback={({ resendableAfter }) => (
-                            <p className="text-center text-sm text-muted-foreground">
-                              Resend code in {resendableAfter} seconds
-                            </p>
-                          )}
-                        >
-                          <Button variant="link" className="w-full" disabled={isGlobalLoading}>
-                            Resend code
-                          </Button>
-                        </SignIn.Action>
-                      </CardContent>
-                      <CardFooter>
-                        <SignIn.Action navigate="previous" asChild>
-                          <Button variant="ghost" className="w-full">
-                            Use another method
-                          </Button>
-                        </SignIn.Action>
-                      </CardFooter>
-                    </Card>
-                  </SignIn.Strategy>
                 </SignIn.Step>
 
                 <SignIn.Step name="forgot-password">
@@ -259,7 +196,7 @@ export default function SignInPage() {
                     <CardHeader className="space-y-1 pb-4">
                       <CardTitle className="text-xl">Reset your password</CardTitle>
                       <CardDescription>
-                        We&apos;ll send you a code to reset your password
+                        We&apos;ll send you an email to reset your password
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -270,7 +207,7 @@ export default function SignInPage() {
                               isLoading ? (
                                 <Spinner className="h-4 w-4" />
                               ) : (
-                                "Send reset code"
+                                "Send reset email"
                               )
                             }
                           </Clerk.Loading>
