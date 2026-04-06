@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Mail, Briefcase, Globe, Calendar, ArrowLeft, MessageSquare } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/auth'
+import { useRealtimeSubscription } from '@/lib/hooks/use-realtime'
 
 const fetcher = async (userId: string) => {
   const supabase = createClient()
@@ -28,11 +30,33 @@ export default function UserProfilePage() {
   const router = useRouter()
   const userId = params.id as string
   const [isMessaging, setIsMessaging] = useState(false)
+  const [isUpdatingFollow, setIsUpdatingFollow] = useState(false)
+  const { userId: currentUserId } = useAuth()
 
   const { data: profile, isLoading, error } = useSWR(userId ? `/profile/${userId}` : null, () => fetcher(userId), {
     revalidateOnFocus: false,
     dedupingInterval: 60000,
   })
+
+  const { data: followData, mutate: mutateFollow } = useSWR(
+    userId && currentUserId ? `/api/users/${userId}/follow` : null,
+    async (url: string) => {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Failed to fetch follow state')
+      return res.json()
+    }
+  )
+
+  useRealtimeSubscription({
+    table: 'user_follows',
+    event: '*',
+    enabled: Boolean(userId && currentUserId),
+    onChange: () => {
+      mutateFollow()
+    },
+  })
+
+  const isOwnProfile = useMemo(() => currentUserId === userId, [currentUserId, userId])
 
   if (error) {
     return (
@@ -83,6 +107,26 @@ export default function UserProfilePage() {
     }
   }
 
+  const handleFollowToggle = async () => {
+    if (!currentUserId || isOwnProfile) return
+
+    setIsUpdatingFollow(true)
+    try {
+      const method = followData?.isFollowing ? 'DELETE' : 'POST'
+      const response = await fetch(`/api/users/${userId}/follow`, { method })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to update follow status')
+      }
+      await mutateFollow()
+      toast.success(followData?.isFollowing ? 'Unfollowed user' : 'Now following user')
+    } catch (error: any) {
+      toast.error(error.message || 'Could not update follow status')
+    } finally {
+      setIsUpdatingFollow(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/30">
       <div className="max-w-3xl mx-auto p-4 sm:p-6 lg:p-8">
@@ -126,6 +170,11 @@ export default function UserProfilePage() {
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto">
+            {!isOwnProfile && (
+              <Button variant="default" size="sm" className="flex-1 sm:flex-initial" disabled={isUpdatingFollow} onClick={handleFollowToggle}>
+                {followData?.isFollowing ? 'Unfollow' : 'Follow'}
+              </Button>
+            )}
             <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-initial">
               <a href={`/feed?profile=${userId}`}>View Feed</a>
             </Button>
@@ -188,6 +237,22 @@ export default function UserProfilePage() {
                   <p className="font-medium text-sm">{profile.education}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Additional Info */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-2xl font-bold">{followData?.followersCount ?? 0}</p>
+              <p className="text-sm text-muted-foreground">Followers</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6 text-center">
+              <p className="text-2xl font-bold">{followData?.followingCount ?? 0}</p>
+              <p className="text-sm text-muted-foreground">Following</p>
             </CardContent>
           </Card>
         </div>

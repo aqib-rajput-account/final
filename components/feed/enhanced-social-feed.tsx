@@ -112,7 +112,7 @@ export function EnhancedSocialFeed() {
   )
 
   // Fetch online users with SWR
-  const { data: onlineUsersData } = useSWR(
+  const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(
     userId ? '/api/users/online' : null,
     fetcher,
     {
@@ -123,7 +123,7 @@ export function EnhancedSocialFeed() {
   )
 
   // Fetch community members with SWR
-  const { data: membersData } = useSWR(
+  const { data: membersData, mutate: mutateMembers } = useSWR(
     userId ? '/api/users/community' : null,
     fetcher,
     {
@@ -148,6 +148,22 @@ export function EnhancedSocialFeed() {
       member.role?.toLowerCase().includes(query)
     )
   }, [members, searchQuery])
+
+  const realtimeOnlineIds = useMemo(
+    () => new Set(Object.keys(realtimeOnline)),
+    [realtimeOnline]
+  )
+
+  const mergedOnlineUsers = useMemo(() => {
+    const byId = new Map<string, any>()
+
+    onlineUsers.forEach((member: any) => byId.set(member.id, member))
+    members
+      .filter((member: any) => realtimeOnlineIds.has(member.id))
+      .forEach((member: any) => byId.set(member.id, member))
+
+    return Array.from(byId.values())
+  }, [members, onlineUsers, realtimeOnlineIds])
 
   const handleImageUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -260,6 +276,64 @@ export function EnhancedSocialFeed() {
       toast.error('Failed to delete post')
     }
   }, [userId, mutateFeed])
+
+  useRealtimeSubscription({
+    table: 'posts',
+    event: '*',
+    enabled: !!userId,
+    onChange: () => {
+      mutateFeed()
+    },
+  })
+
+  useRealtimeSubscription({
+    table: 'post_likes',
+    event: '*',
+    enabled: !!userId,
+    onChange: () => {
+      mutateFeed()
+    },
+  })
+
+  useRealtimeSubscription({
+    table: 'post_comments',
+    event: '*',
+    enabled: !!userId,
+    onChange: () => {
+      mutateFeed()
+    },
+  })
+
+  useRealtimeSubscription({
+    table: 'profiles',
+    event: '*',
+    enabled: !!userId,
+    onChange: () => {
+      mutateMembers()
+      mutateOnlineUsers()
+    },
+  })
+
+  usePresence({
+    channelName: 'community-presence',
+    userId: userId || '',
+    userInfo: {
+      full_name: profile?.full_name,
+      avatar_url: profile?.avatar_url,
+      role: profile?.role,
+    },
+    enabled: !!userId,
+    onSync: (state) => {
+      const flattened = Object.entries(state).reduce<Record<string, any>>((acc, [key, presences]) => {
+        if (presences.length > 0) {
+          acc[key] = presences[0]
+        }
+        return acc
+      }, {})
+
+      setRealtimeOnline(flattened)
+    },
+  })
 
   // Show login prompt if not authenticated
   if (!userId) {
@@ -505,7 +579,7 @@ export function EnhancedSocialFeed() {
             <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="online" className="text-xs">
                 <UserCheck className="h-3 w-3 mr-1" />
-                Online ({onlineUsers.length})
+                Online ({mergedOnlineUsers.length})
               </TabsTrigger>
               <TabsTrigger value="members" className="text-xs">
                 <Users className="h-3 w-3 mr-1" />
@@ -516,10 +590,10 @@ export function EnhancedSocialFeed() {
             <TabsContent value="online" className="mt-0">
               <ScrollArea className="h-[400px]">
                 <div className="p-2">
-                  {onlineUsers.length === 0 ? (
+                  {mergedOnlineUsers.length === 0 ? (
                     <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
                   ) : (
-                    onlineUsers.map((member: any) => (
+                    mergedOnlineUsers.map((member: any) => (
                       <UserCard key={member.id} user={member} isOnline={true} />
                     ))
                   )}
@@ -548,7 +622,7 @@ export function EnhancedSocialFeed() {
                       <UserCard 
                         key={member.id} 
                         user={member} 
-                        isOnline={onlineUsers.some((u: any) => u.id === member.id)}
+                        isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)}
                       />
                     ))
                   )}
@@ -561,4 +635,3 @@ export function EnhancedSocialFeed() {
     </div>
   )
 }
-

@@ -108,3 +108,24 @@ After seeding, the following are available and fully CRUD-enabled through API ro
   - `POST /api/feed/posts`
   - `PATCH /api/feed/posts/:id`
   - `DELETE /api/feed/posts/:id`
+
+## Real-time social sync (feed, members, role consistency)
+
+This project now includes real-time subscriptions/presence so feed and profile data stay in sync across screens:
+
+- Feed updates live for:
+  - new/edited/deleted posts (`posts`)
+  - likes (`post_likes`)
+  - comments count changes (`post_comments`)
+- Members and online list update live from:
+  - profile changes (`profiles`)
+  - Supabase presence (`community-presence`)
+- Role/profile consistency:
+  - signed-in user profile updates are subscribed in auth context, so role changes (for example `shura`) propagate quickly across feed/profile/settings UI.
+- Follow system:
+  - API: `GET|POST|DELETE /api/users/:userId/follow`
+  - DB table: `user_follows`
+- WebRTC signaling helper:
+  - `lib/hooks/use-webrtc-signaling.ts` uses Supabase broadcast channels for offer/answer/ICE signaling transport.
+
+> Note: for Realtime to work, make sure these tables are in your `supabase_realtime` publication.

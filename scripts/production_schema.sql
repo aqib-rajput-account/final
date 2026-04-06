@@ -318,9 +318,32 @@ CREATE POLICY "post_bookmarks_insert" ON public.post_bookmarks FOR INSERT WITH C
 DROP POLICY IF EXISTS "post_bookmarks_delete" ON public.post_bookmarks;
 CREATE POLICY "post_bookmarks_delete" ON public.post_bookmarks FOR DELETE USING (true);
 
+-- =====================
+-- 11. USER FOLLOWS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.user_follows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  follower_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  following_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(follower_id, following_id),
+  CHECK (follower_id <> following_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_follows_follower_id ON public.user_follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_user_follows_following_id ON public.user_follows(following_id);
+
+ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "user_follows_select" ON public.user_follows;
+CREATE POLICY "user_follows_select" ON public.user_follows FOR SELECT USING (true);
+DROP POLICY IF EXISTS "user_follows_insert" ON public.user_follows;
+CREATE POLICY "user_follows_insert" ON public.user_follows FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "user_follows_delete" ON public.user_follows;
+CREATE POLICY "user_follows_delete" ON public.user_follows FOR DELETE USING (true);
+
 
 -- =====================
--- 11. ANNOUNCEMENTS
+-- 12. ANNOUNCEMENTS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.announcements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -503,4 +526,5 @@ CREATE PUBLICATION supabase_realtime FOR TABLE
   public.profiles,
   public.messages,
   public.post_likes,
-  public.post_comments;
+  public.post_comments,
+  public.user_follows;
