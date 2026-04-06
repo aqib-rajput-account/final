@@ -402,13 +402,26 @@ function EmailVerificationButton() {
 
     setSendingVerification(true);
     try {
-      await user.primaryEmailAddress.prepareVerification({
-        strategy: "email_link",
-        redirectUrl: `${window.location.origin}/profile`,
-      });
-      toast.success("Verification email sent. Please check your inbox.");
-    } catch {
-      toast.error("Unable to send verification email. Please try again.");
+      try {
+        await user.primaryEmailAddress.prepareVerification({
+          strategy: "email_link",
+          redirectUrl: `${window.location.origin}/profile`,
+        });
+        toast.success("Verification email link sent. Please check your inbox.");
+      } catch {
+        // Fallback for projects where email links are not enabled.
+        await user.primaryEmailAddress.prepareVerification({
+          strategy: "email_code",
+        });
+        toast.success("Verification email sent with a code. Please check your inbox.");
+      }
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "errors" in error
+          ? ((error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.longMessage ??
+            (error as { errors?: Array<{ longMessage?: string; message?: string }> }).errors?.[0]?.message)
+          : null;
+      toast.error(message || "Unable to send verification email. Check Clerk email settings and try again.");
     } finally {
       setSendingVerification(false);
     }
@@ -429,7 +442,7 @@ function EmailVerificationButton() {
       ) : (
         <>
           <Send className="mr-2 h-3.5 w-3.5" />
-          Send verification link
+          Send verification email
         </>
       )}
     </Button>
