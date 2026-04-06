@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { Header } from '@/components/layout'
 import { Footer } from '@/components/layout'
 import { EnhancedSocialFeed } from '@/components/feed/enhanced-social-feed'
+import { FeedErrorBoundary } from '@/components/feed/feed-error-boundary'
 import { Loader2 } from 'lucide-react'
 
 export const metadata = {
@@ -15,13 +16,15 @@ export default function FeedPage() {
       <Header />
       <main className="flex-1 bg-background">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <Suspense fallback={
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          }>
-            <EnhancedSocialFeed />
-          </Suspense>
+          <FeedErrorBoundary>
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            }>
+              <EnhancedSocialFeed />
+            </Suspense>
+          </FeedErrorBoundary>
         </div>
       </main>
       <Footer />

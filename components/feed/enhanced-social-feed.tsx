@@ -87,11 +87,8 @@ interface PostComment {
 
 const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
-  if (!res.ok) {
-    const error = new Error('Failed to fetch')
-    throw error
-  }
-  return res.json()
+  if (!res.ok) throw new Error('Failed to fetch')
+  return res.json() as Promise<T>
 }
 
 function PostSkeleton() {
@@ -131,12 +128,20 @@ function UserCard({ user: member, isOnline = false }: { user: any; isOnline?: bo
         <p className="text-xs text-muted-foreground truncate">{member.profession || member.role || 'Member'}</p>
       </div>
       {isOnline && (
-        <Badge variant="secondary" className="text-xs shrink-0">
-          Online
-        </Badge>
+        <Badge variant="secondary" className="text-xs shrink-0">Online</Badge>
       )}
     </div>
   )
+}
+
+/** Normalise a raw API post row — single canonical place for body→content mapping */
+function normalisePost(raw: any): FeedPost {
+  return {
+    ...raw,
+    content: raw.content ?? raw.body ?? '',
+    likes_count: raw.likes_count ?? raw.like_count ?? 0,
+    comments_count: raw.comments_count ?? raw.comment_count ?? 0,
+  }
 }
 
 export function EnhancedSocialFeed() {
@@ -150,7 +155,6 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
-  const [hasPendingRealtimeRefresh, setHasPendingRealtimeRefresh] = useState(false)
   const [newPostsCount, setNewPostsCount] = useState(0)
   const [mentionSearch, setMentionSearch] = useState('')
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
@@ -182,7 +186,7 @@ export function EnhancedSocialFeed() {
     persistSize: true,
     revalidateAll: false,
     dedupingInterval: 3000,
-    refreshInterval: 0, // Disable polling, use real-time
+    refreshInterval: 0,
   })
 
   const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
@@ -191,23 +195,21 @@ export function EnhancedSocialFeed() {
   const lastStablePosts = useRef<FeedPost[]>([])
   const posts = useMemo(() => {
     let allPosts = feedPages?.flatMap((page) => page.data) ?? []
-    
-    // If we have no data from SWR but we have stable posts from before, and we are validating or loading, keep them.
     if (allPosts.length === 0 && lastStablePosts.current.length > 0 && (feedValidating || feedLoading)) {
       allPosts = lastStablePosts.current
     } else if (allPosts.length > 0) {
       lastStablePosts.current = allPosts
     }
-
     if (postSearchQuery.trim()) {
       const q = postSearchQuery.toLowerCase()
-      return allPosts.filter((p: FeedPost) => 
-        p.content.toLowerCase().includes(q) || 
+      return allPosts.filter((p) =>
+        p.content.toLowerCase().includes(q) ||
         p.profiles?.full_name?.toLowerCase().includes(q)
       )
     }
     return allPosts
   }, [feedPages, postSearchQuery, feedValidating, feedLoading])
+
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
@@ -244,6 +246,7 @@ export function EnhancedSocialFeed() {
     return Array.from(byId.values())
   }, [members, onlineUsers, profile, realtimeOnlineIds, resolvedRole, userId])
 
+  // Surgically patch a post in the SWR cache without triggering a refetch
   const patchFeed = useCallback((fn: (post: FeedPost) => FeedPost) => {
     mutateFeed((pages) => {
       if (!pages) return pages
@@ -251,6 +254,12 @@ export function EnhancedSocialFeed() {
     }, false)
   }, [mutateFeed])
 
+  /**
+   * Realtime event handler.
+   * KEY RULE: skip patches for events the current user triggered — they already
+   * have the optimistic update applied. Only apply patches for other users' events
+   * to avoid double-counting likes, comments, etc.
+   */
   const handleRealtimeEvent = useCallback((event: RealtimeEventEnvelope) => {
     observeClientMetric('feed.realtime.events_received.total', 1, { eventType: event.eventType })
     logClientTrace({
@@ -258,30 +267,51 @@ export function EnhancedSocialFeed() {
       message: 'Feed consumed realtime event',
       tags: { eventType: event.eventType, entityId: event.entityId },
     })
+
+    const isSelf = event.actorUserId === userId
+
     if (event.eventType === 'post.liked' || event.eventType === 'post.unliked') {
+      // Self already applied optimistic update — skip to avoid double-count
+      if (isSelf) return
       const postId = String(event.payload.postId ?? event.entityId)
       const direction = event.eventType === 'post.liked' ? 1 : -1
-      patchFeed((post) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + direction) } : post))
+      patchFeed((post) => post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + direction) } : post)
       return
     }
 
     if (event.eventType === 'comment.created') {
+      // Self already applied optimistic update — skip to avoid double-count
+      if (isSelf) return
       const postId = String(event.payload.postId ?? '')
       if (!postId) return
-      patchFeed((post) => (post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post))
+      patchFeed((post) => post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post)
       return
     }
 
     if (event.eventType === 'post.created') {
-      if (event.actorUserId !== userId) {
-        setNewPostsCount((prev: number) => prev + 1)
-        setHasPendingRealtimeRefresh(true)
+      // Own post was already optimistically prepended — skip
+      if (isSelf) return
+      setNewPostsCount((prev) => prev + 1)
+      return
+    }
+
+    if (event.eventType === 'post.updated') {
+      // Surgically update the post body in cache — no full refetch needed
+      const postId = String(event.payload.postId ?? event.entityId)
+      const updatedBody = event.payload.body as string | undefined
+      if (postId && updatedBody) {
+        patchFeed((post) => post.id === postId ? { ...post, content: updatedBody } : post)
       }
       return
     }
 
-    if (event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
-      setHasPendingRealtimeRefresh(true)
+    if (event.eventType === 'post.deleted') {
+      const postId = String(event.payload.postId ?? event.entityId)
+      if (!postId) return
+      mutateFeed((pages) => pages?.map((page) => ({
+        ...page,
+        data: page.data.filter((p) => p.id !== postId),
+      })), false)
       return
     }
 
@@ -289,12 +319,29 @@ export function EnhancedSocialFeed() {
       mutateMembers()
       mutateOnlineUsers()
     }
-  }, [mutateMembers, mutateOnlineUsers, patchFeed])
+  }, [mutateMembers, mutateOnlineUsers, mutateFeed, patchFeed, userId])
 
+  /**
+   * Prepend new posts from other users without resetting scroll position.
+   * Fetches only the first page and inserts posts not already in the cache.
+   */
   const refreshFeedPosts = useCallback(async () => {
-    setHasPendingRealtimeRefresh(false)
     setNewPostsCount(0)
-    await mutateFeed()
+    try {
+      const res = await fetch('/api/feed/posts?limit=10')
+      if (!res.ok) return
+      const freshPage: FeedPage = await res.json()
+      mutateFeed((pages) => {
+        if (!pages) return [freshPage]
+        const existingIds = new Set(pages.flatMap((p) => p.data.map((post) => post.id)))
+        const newPosts = freshPage.data.filter((p) => !existingIds.has(p.id))
+        if (newPosts.length === 0) return pages
+        return [{ ...pages[0], data: [...newPosts, ...pages[0].data] }, ...pages.slice(1)]
+      }, false)
+    } catch {
+      // Fallback to full revalidation if fetch fails
+      mutateFeed()
+    }
   }, [mutateFeed])
 
   useEffect(() => {
@@ -334,9 +381,7 @@ export function EnhancedSocialFeed() {
   useEffect(() => {
     if (!observerRef.current || !hasMore || feedLoading) return
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) {
-        setSize((previous) => previous + 1)
-      }
+      if (entries[0]?.isIntersecting) setSize((prev) => prev + 1)
     }, { rootMargin: '300px' })
     observer.observe(observerRef.current)
     return () => observer.disconnect()
@@ -345,7 +390,6 @@ export function EnhancedSocialFeed() {
   const handleImageUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) return toast.error('Please select an image file')
     if (file.size > 5 * 1024 * 1024) return toast.error('Image must be less than 5MB')
-
     setIsUploading(true)
     try {
       const formData = new FormData()
@@ -355,9 +399,7 @@ export function EnhancedSocialFeed() {
       const { url, pathname } = await response.json()
       const imageUrl = typeof url === 'string' && url.length > 0
         ? url
-        : pathname
-          ? `/api/file?pathname=${encodeURIComponent(pathname)}`
-          : null
+        : pathname ? `/api/file?pathname=${encodeURIComponent(pathname)}` : null
       if (!imageUrl) throw new Error('Upload completed but no image URL was returned')
       setNewPostImage(imageUrl)
       toast.success('Image uploaded')
@@ -368,9 +410,13 @@ export function EnhancedSocialFeed() {
     }
   }, [])
 
-  const optimisticAddPost = useCallback((content: string, imageUrl: string | null, metadata?: Record<string, unknown>) => {
+  /**
+   * Optimistically prepend a post with a known tempId so we can replace it
+   * precisely when the real post comes back — no full refetch needed.
+   */
+  const optimisticAddPost = useCallback((tempId: string, content: string, imageUrl: string | null, metadata?: Record<string, unknown>) => {
     const optimisticPost: FeedPost = {
-      id: `optimistic-${Date.now()}`,
+      id: tempId,
       content,
       image_url: imageUrl,
       created_at: new Date().toISOString(),
@@ -386,7 +432,6 @@ export function EnhancedSocialFeed() {
         role: profile?.role || null,
       },
     }
-
     mutateFeed((pages) => {
       if (!pages || pages.length === 0) {
         return [{ data: [optimisticPost], userLikes: [], userBookmarks: [], nextCursor: null }]
@@ -397,12 +442,9 @@ export function EnhancedSocialFeed() {
 
   const updatePostContent = useCallback((value: string) => {
     setNewPostContent(value)
-    const cursorPosition = value.length // Simple implementation, can be improved
-    const textBeforeCursor = value.slice(0, cursorPosition)
-    const lastAtSymbol = textBeforeCursor.lastIndexOf('@')
-    
-    if (lastAtSymbol !== -1) {
-      const query = textBeforeCursor.slice(lastAtSymbol + 1)
+    const lastAt = value.lastIndexOf('@')
+    if (lastAt !== -1) {
+      const query = value.slice(lastAt + 1)
       if (!query.includes(' ')) {
         setMentionSearch(query)
         setShowMentionSuggestions(true)
@@ -413,9 +455,8 @@ export function EnhancedSocialFeed() {
   }, [])
 
   const insertMention = useCallback((mentionName: string) => {
-    const lastAtSymbol = newPostContent.lastIndexOf('@')
-    const newValue = newPostContent.slice(0, lastAtSymbol) + '@' + mentionName + ' '
-    setNewPostContent(newValue)
+    const lastAt = newPostContent.lastIndexOf('@')
+    setNewPostContent(newPostContent.slice(0, lastAt) + '@' + mentionName + ' ')
     setShowMentionSuggestions(false)
   }, [newPostContent])
 
@@ -423,6 +464,7 @@ export function EnhancedSocialFeed() {
     const content = opts?.contentOverride ?? newPostContent
     if (!userId || !content.trim()) return toast.error('Please write something to post')
 
+    const tempId = `optimistic-${Date.now()}`
     setIsPosting(true)
     trackFeedFunnelEvent({
       funnel: 'feed_engagement',
@@ -430,11 +472,14 @@ export function EnhancedSocialFeed() {
       traceId: traceIdRef.current,
       metadata: { action: opts?.asShare ? 'share_post' : 'create_post' },
     })
-    optimisticAddPost(content.trim(), newPostImage, opts?.asShare && opts.sourcePost ? {
+
+    const shareMetadata = opts?.asShare && opts.sourcePost ? {
       shared_post_id: opts.sourcePost.id,
       shared_author_name: opts.sourcePost.profiles?.full_name,
       shared_post_excerpt: opts.sourcePost.content.slice(0, 180),
-    } : undefined)
+    } : undefined
+
+    optimisticAddPost(tempId, content.trim(), newPostImage, shareMetadata)
 
     try {
       const response = await fetch('/api/feed/posts', {
@@ -448,19 +493,28 @@ export function EnhancedSocialFeed() {
           metadata: opts?.asShare && opts.sourcePost ? { shared_post_id: opts.sourcePost.id } : {},
         }),
       })
-
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to create post')
+
+      // Replace the optimistic entry with the real post — no full refetch, no flash
+      const realPost: FeedPost = normalisePost(payload.post)
+      mutateFeed((pages) => pages?.map((page) => ({
+        ...page,
+        data: page.data.map((p) => p.id === tempId ? realPost : p),
+      })), false)
 
       setNewPostContent('')
       setNewPostImage(null)
       setShareTargetPost(null)
       setShareNote('')
       toast.success(opts?.asShare ? 'Shared to your feed' : 'Post created!')
-      mutateFeed()
     } catch (error: any) {
+      // Roll back the optimistic entry
+      mutateFeed((pages) => pages?.map((page) => ({
+        ...page,
+        data: page.data.filter((p) => p.id !== tempId),
+      })), false)
       toast.error(error.message || 'Failed to create post')
-      mutateFeed()
     } finally {
       setIsPosting(false)
     }
@@ -474,13 +528,12 @@ export function EnhancedSocialFeed() {
       traceId: traceIdRef.current,
       metadata: { action: isLiked ? 'unlike' : 'like', postId },
     })
-
-    patchFeed((post) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + (isLiked ? -1 : 1)) } : post))
+    // Optimistic update — realtime event from self will be ignored in handleRealtimeEvent
+    patchFeed((post) => post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + (isLiked ? -1 : 1)) } : post)
     mutateFeed((pages) => pages?.map((page) => ({
       ...page,
       userLikes: isLiked ? page.userLikes.filter((id) => id !== postId) : Array.from(new Set([...page.userLikes, postId])),
     })), false)
-
     try {
       const response = await fetch(`/api/posts/${postId}/like`, { method: isLiked ? 'DELETE' : 'POST' })
       const payload = await response.json()
@@ -500,9 +553,8 @@ export function EnhancedSocialFeed() {
       traceId: traceIdRef.current,
       metadata: { action: 'comment', postId },
     })
-
-    patchFeed((post) => (post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post))
-
+    // Optimistic update — realtime event from self will be ignored in handleRealtimeEvent
+    patchFeed((post) => post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post)
     try {
       const response = await fetch(`/api/posts/${postId}/comments`, {
         method: 'POST',
@@ -522,7 +574,6 @@ export function EnhancedSocialFeed() {
       ...page,
       userBookmarks: isBookmarked ? page.userBookmarks.filter((id) => id !== postId) : Array.from(new Set([...page.userBookmarks, postId])),
     })), false)
-
     try {
       const response = await fetch('/api/feed/bookmarks', {
         method: isBookmarked ? 'DELETE' : 'POST',
@@ -537,7 +588,8 @@ export function EnhancedSocialFeed() {
   }, [mutateFeed])
 
   const handleDeletePost = useCallback(async (postId: string) => {
-    mutateFeed((pages) => pages?.map((page) => ({ ...page, data: page.data.filter((post) => post.id !== postId) })), false)
+    // Optimistic removal — realtime post.deleted event from self is also handled safely
+    mutateFeed((pages) => pages?.map((page) => ({ ...page, data: page.data.filter((p) => p.id !== postId) })), false)
     try {
       const response = await fetch(`/api/feed/posts/${postId}`, { method: 'DELETE' })
       const payload = await response.json()
@@ -565,6 +617,7 @@ export function EnhancedSocialFeed() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left sidebar — profile card */}
       <aside className="hidden lg:block lg:col-span-3">
         <Card className="sticky top-20">
           <CardContent className="p-6">
@@ -585,17 +638,19 @@ export function EnhancedSocialFeed() {
         </Card>
       </aside>
 
+      {/* Main feed column */}
       <main className="lg:col-span-6 space-y-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search posts..." 
-            value={postSearchQuery} 
-            onChange={(e) => setPostSearchQuery(e.target.value)} 
+          <Input
+            placeholder="Search posts..."
+            value={postSearchQuery}
+            onChange={(e) => setPostSearchQuery(e.target.value)}
             className="pl-9 bg-background/50 border-muted focus:bg-background transition-colors"
           />
         </div>
 
+        {/* Compose box */}
         <Card>
           <CardContent className="p-4">
             <div className="flex gap-3">
@@ -604,18 +659,17 @@ export function EnhancedSocialFeed() {
                 <AvatarFallback>{profile?.full_name?.[0] || 'U'}</AvatarFallback>
               </Avatar>
               <div className="flex-1 space-y-3 relative">
-                <Textarea 
-                  placeholder="Share an update… use @name for mentions" 
-                  value={newPostContent} 
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updatePostContent(e.target.value)} 
-                  className="min-h-[80px] resize-none" 
+                <Textarea
+                  placeholder="Share an update… use @name for mentions"
+                  value={newPostContent}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updatePostContent(e.target.value)}
+                  className="min-h-[80px] resize-none"
                 />
-                
                 {showMentionSuggestions && (
                   <Card className="absolute z-50 left-0 right-0 top-full mt-1 shadow-xl border-primary/20 overflow-hidden">
                     <ScrollArea className="max-h-[200px]">
                       <div className="p-1">
-                        {members.filter((m: any) => 
+                        {members.filter((m: any) =>
                           (m.full_name || '').toLowerCase().includes(mentionSearch.toLowerCase())
                         ).slice(0, 5).map((m: any) => (
                           <button
@@ -646,7 +700,8 @@ export function EnhancedSocialFeed() {
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <Button variant="ghost" size="sm" onClick={() => document.getElementById('post-image-input')?.click()} disabled={isUploading}>
-                      {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}<span className="ml-2 hidden sm:inline">Photo</span>
+                      {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+                      <span className="ml-2 hidden sm:inline">Photo</span>
                     </Button>
                     <input id="post-image-input" type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleImageUpload(file); e.target.value = '' }} />
                   </div>
@@ -659,36 +714,42 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
+        {/* Post list */}
         <div className="space-y-4 relative">
-          {(feedValidating || hasPendingRealtimeRefresh) && (
+          {feedValidating && (
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
               <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
             </div>
           )}
+
+          {/* New posts banner — prepends without resetting scroll */}
           {newPostsCount > 0 && (
             <div className="sticky top-20 z-20 flex justify-center py-2 animate-in fade-in slide-in-from-top-4 duration-500">
-              <Button 
-                variant="default" 
-                size="sm" 
+              <Button
+                variant="default"
+                size="sm"
                 className="rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-6 gap-3 border-none ring-4 ring-background transform hover:scale-105 transition-all"
                 onClick={() => { void refreshFeedPosts() }}
               >
-                <div className="flex -space-x-2 mr-1">
-                   <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                </div>
+                <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
                 {newPostsCount} {newPostsCount === 1 ? 'New Post' : 'New Posts'}
                 <ArrowUp className="h-4 w-4 animate-bounce" />
               </Button>
             </div>
           )}
-          {(feedLoading && posts.length === 0) ? (
+
+          {feedLoading && posts.length === 0 ? (
             <div className="space-y-4">
-              <PostSkeleton />
-              <PostSkeleton />
-              <PostSkeleton />
+              <PostSkeleton /><PostSkeleton /><PostSkeleton />
             </div>
           ) : posts.length === 0 ? (
-            <Card><CardContent className="p-8 text-center"><MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><h3 className="font-semibold mb-2">No posts yet</h3><p className="text-muted-foreground">Be the first to share something with the community!</p></CardContent></Card>
+            <Card>
+              <CardContent className="p-8 text-center">
+                <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="font-semibold mb-2">No posts yet</h3>
+                <p className="text-muted-foreground">Be the first to share something with the community!</p>
+              </CardContent>
+            </Card>
           ) : (
             posts.map((post) => (
               <PostCard
@@ -710,16 +771,12 @@ export function EnhancedSocialFeed() {
             ))
           )}
 
-          {isLoadingMore && (
-            <>
-              <PostSkeleton />
-              <PostSkeleton />
-            </>
-          )}
+          {isLoadingMore && <><PostSkeleton /><PostSkeleton /></>}
           <div ref={observerRef} className="h-6" />
         </div>
       </main>
 
+      {/* Right sidebar — online / members */}
       <aside className="hidden lg:block lg:col-span-3">
         <Card className="sticky top-20">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'online' | 'members')}>
@@ -727,20 +784,57 @@ export function EnhancedSocialFeed() {
               <TabsTrigger value="online" className="text-xs"><UserCheck className="h-3 w-3 mr-1" />Online ({mergedOnlineUsers.length})</TabsTrigger>
               <TabsTrigger value="members" className="text-xs"><Users className="h-3 w-3 mr-1" />Members ({members.length})</TabsTrigger>
             </TabsList>
-            <TabsContent value="online" className="mt-0"><ScrollArea className="h-[400px]"><div className="p-2">{mergedOnlineUsers.length === 0 ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p> : mergedOnlineUsers.map((member: any) => <UserCard key={member.id} user={member} isOnline />)}</div></ScrollArea></TabsContent>
+            <TabsContent value="online" className="mt-0">
+              <ScrollArea className="h-[400px]">
+                <div className="p-2">
+                  {mergedOnlineUsers.length === 0
+                    ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
+                    : mergedOnlineUsers.map((member: any) => <UserCard key={member.id} user={member} isOnline />)}
+                </div>
+              </ScrollArea>
+            </TabsContent>
             <TabsContent value="members" className="mt-0">
-              <div className="p-2"><div className="relative mb-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search members..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" /></div></div>
-              <ScrollArea className="h-[340px]"><div className="p-2 pt-0">{filteredMembers.length === 0 ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p> : filteredMembers.map((member: any) => <UserCard key={member.id} user={member} isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)} />)}</div></ScrollArea>
+              <div className="p-2">
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search members..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" />
+                </div>
+              </div>
+              <ScrollArea className="h-[340px]">
+                <div className="p-2 pt-0">
+                  {filteredMembers.length === 0
+                    ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p>
+                    : filteredMembers.map((member: any) => (
+                        <UserCard
+                          key={member.id}
+                          user={member}
+                          isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)}
+                        />
+                      ))}
+                </div>
+              </ScrollArea>
             </TabsContent>
           </Tabs>
         </Card>
       </aside>
 
+      {/* Share dialog */}
       <Dialog open={!!shareTargetPost} onOpenChange={(open) => !open && setShareTargetPost(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Share post with note</DialogTitle></DialogHeader>
-          <Textarea value={shareNote} onChange={(e) => setShareNote(e.target.value)} placeholder="Add context, mention people with @name, and share." className="min-h-[100px]" />
-          <Card className="bg-muted/40 border-dashed"><CardContent className="pt-4"><p className="text-sm text-muted-foreground">Sharing from</p><p className="font-medium">{shareTargetPost?.profiles?.full_name || 'Community Member'}</p><p className="text-sm line-clamp-3 mt-1">{shareTargetPost?.content}</p></CardContent></Card>
+          <Textarea
+            value={shareNote}
+            onChange={(e) => setShareNote(e.target.value)}
+            placeholder="Add context, mention people with @name, and share."
+            className="min-h-[100px]"
+          />
+          <Card className="bg-muted/40 border-dashed">
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Sharing from</p>
+              <p className="font-medium">{shareTargetPost?.profiles?.full_name || 'Community Member'}</p>
+              <p className="text-sm line-clamp-3 mt-1">{shareTargetPost?.content}</p>
+            </CardContent>
+          </Card>
           <div className="flex justify-end">
             <Button
               onClick={() => {
@@ -789,13 +883,11 @@ function PostCard({
     fetcher,
     { revalidateOnFocus: false }
   )
-
   const comments = commentsResponse?.comments ?? []
 
   const submitComment = async () => {
     const payload = `${replyPrefix}${commentInput}`.trim()
     if (!payload) return
-
     const optimisticComment: PostComment = {
       id: `temp-${Date.now()}`,
       content: payload,
@@ -803,7 +895,6 @@ function PostCard({
       author_id: 'self',
       author: { id: 'self', full_name: 'You', avatar_url: null, role: 'user' },
     }
-
     mutateComments((current) => ({ comments: [...(current?.comments ?? []), optimisticComment] }), false)
     setCommentInput('')
     setReplyPrefix('')
@@ -826,11 +917,15 @@ function PostCard({
             </Link>
             <div className="min-w-0">
               <Link href={`/profile/${post.author_id}`} className="font-semibold hover:underline truncate block">{post.profiles?.full_name || 'Anonymous'}</Link>
-              <p className="text-xs text-muted-foreground truncate">{post.profiles?.profession || post.profiles?.role || 'Community member'} · {post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {post.profiles?.profession || post.profiles?.role || 'Community member'} · {post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+              </p>
             </div>
           </div>
           {isOwner && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
           )}
         </div>
       </CardHeader>
@@ -858,21 +953,25 @@ function PostCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className={cn('gap-2 group transition-all active:scale-95', isLiked && 'text-red-500')} 
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('gap-2 group transition-all active:scale-95', isLiked && 'text-red-500')}
             onClick={onLike}
           >
             <Heart className={cn('h-4 w-4 transition-transform group-hover:scale-110', isLiked && 'fill-current animate-in zoom-in-50')} />
             Like
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowComments((v) => !v)}><MessageCircle className="h-4 w-4" />Comment</Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}><Share2 className="h-4 w-4" />Share</Button>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className={cn('gap-2', isBookmarked && 'text-primary')} 
+          <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowComments((v) => !v)}>
+            <MessageCircle className="h-4 w-4" />Comment
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}>
+            <Share2 className="h-4 w-4" />Share
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('gap-2', isBookmarked && 'text-primary')}
             onClick={onBookmark}
           >
             <Bookmark className={cn('h-4 w-4', isBookmarked && 'fill-current')} />
@@ -886,19 +985,23 @@ function PostCard({
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Reply className="h-3.5 w-3.5" />
                 <span>Replying to <strong>{replyPrefix.trim()}</strong></span>
-                <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => { setReplyPrefix(''); setReplyToId(null); }}>Clear</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => { setReplyPrefix(''); setReplyToId(null) }}>Clear</Button>
               </div>
             )}
             <div className="flex gap-2">
-              <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Comment… use @name and hit Enter" onKeyDown={(e) => e.key === 'Enter' && submitComment()} />
+              <Input
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                placeholder="Comment… use @name and hit Enter"
+                onKeyDown={(e) => e.key === 'Enter' && submitComment()}
+              />
               <Button onClick={submitComment} disabled={!commentInput.trim()}><Send className="h-4 w-4" /></Button>
             </div>
-
-            {comments.filter((c: PostComment) => !c.parent_comment_id).map((comment: PostComment) => (
-              <CommentItem 
-                key={comment.id} 
-                comment={comment} 
-                allComments={comments} 
+            {comments.filter((c) => !c.parent_comment_id).map((comment) => (
+              <CommentItem
+                key={comment.id}
+                comment={comment}
+                allComments={comments}
                 onReply={(prefix, parentId) => {
                   setReplyPrefix(prefix)
                   setReplyToId(parentId)
@@ -913,17 +1016,16 @@ function PostCard({
   )
 }
 
-function CommentItem({ 
-  comment, 
-  allComments, 
-  onReply 
-}: { 
-  comment: any; 
-  allComments: any[]; 
-  onReply: (prefix: string, parentId: string) => void 
+function CommentItem({
+  comment,
+  allComments,
+  onReply,
+}: {
+  comment: any
+  allComments: any[]
+  onReply: (prefix: string, parentId: string) => void
 }) {
-  const replies = allComments.filter(c => c.parent_comment_id === comment.id)
-
+  const replies = allComments.filter((c) => c.parent_comment_id === comment.id)
   return (
     <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200 mt-3">
       <div className="group rounded-md bg-muted/40 p-3 hover:bg-muted/60 transition-colors border border-transparent hover:border-primary/10 shadow-sm">
@@ -937,8 +1039,8 @@ function CommentItem({
               {comment.author?.full_name || 'Member'}
             </Link>
           </div>
-          <button 
-            className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-medium opacity-0 group-hover:opacity-100" 
+          <button
+            className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-medium opacity-0 group-hover:opacity-100"
             onClick={() => onReply(`@${comment.author?.full_name || 'member'} `, comment.id)}
           >
             Reply
@@ -946,16 +1048,10 @@ function CommentItem({
         </div>
         <p className="text-sm pl-7 whitespace-pre-wrap leading-relaxed">{comment.content}</p>
       </div>
-      
       {replies.length > 0 && (
         <div className="pl-6 space-y-3 border-l-2 border-muted/50 ml-2.5">
-          {replies.map(reply => (
-            <CommentItem 
-              key={reply.id} 
-              comment={reply} 
-              allComments={allComments} 
-              onReply={onReply} 
-            />
+          {replies.map((reply) => (
+            <CommentItem key={reply.id} comment={reply} allComments={allComments} onReply={onReply} />
           ))}
         </div>
       )}
