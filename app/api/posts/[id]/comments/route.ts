@@ -6,13 +6,18 @@ import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 import { canUsersInteract, enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
 
+function isMissingColumnError(error: { message?: string } | null | undefined, column: string) {
+  const message = error?.message ?? ''
+  return message.includes(`Could not find the '${column}' column`) || message.includes(`column ${column} does not exist`)
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: postId } = await params
     const supabase = await createClient()
     const userId = await resolveAuthenticatedUserId(request)
 
-    const { data: rawComments, error } = await supabase
+    let { data: rawComments, error } = await supabase
       .from('comments')
       .select(`
         *,
@@ -21,13 +26,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
 
+    if (error && isMissingColumnError(error, 'body')) {
+      const fallback = await supabase
+        .from('comments')
+        .select(`
+          *,
+          author:profiles!author_id(id, full_name, avatar_url, role)
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true })
+      rawComments = fallback.data
+      error = fallback.error
+    }
+
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     const comments = rawComments?.map((c: any) => ({
       ...c,
-      content: c.body, // Map DB 'body' to API 'content' for frontend compatibility
+      content: c.content ?? c.body ?? '',
     }))
 
     if (!userId) {
@@ -82,12 +100,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 
-    const { data: comment, error } = await supabase
+    let { data: comment, error } = await supabase
       .from('comments')
       .insert({
         post_id: postId,
         author_id: userId,
-        body: content.trim(),
+        content: content.trim(),
         parent_comment_id: parent_comment_id || null,
       })
       .select(`
@@ -95,6 +113,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         author:profiles!author_id(id, full_name, avatar_url, role)
       `)
       .single()
+
+    if (error && isMissingColumnError(error, 'content')) {
+      const fallback = await supabase
+        .from('comments')
+        .insert({
+          post_id: postId,
+          author_id: userId,
+          body: content.trim(),
+          parent_comment_id: parent_comment_id || null,
+        })
+        .select(`
+          *,
+          author:profiles!author_id(id, full_name, avatar_url, role)
+        `)
+        .single()
+      comment = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
