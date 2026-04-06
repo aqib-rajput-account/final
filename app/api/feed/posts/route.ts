@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ post }, { status: 201 })
+    return NextResponse.json({ post, actor_user_id: userId }, { status: 201 })
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
