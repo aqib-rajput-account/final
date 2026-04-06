@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -32,6 +33,10 @@ import {
   ArrowUp,
   Link2,
   Check,
+  Edit3,
+  Globe,
+  Lock,
+  Users2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -58,6 +63,7 @@ interface FeedPost {
     profession: string | null
     role: string | null
   } | null
+  visibility?: 'public' | 'followers' | 'private'
   metadata?: {
     shared_post_id?: string
     shared_author_name?: string
@@ -86,6 +92,16 @@ interface PostComment {
     avatar_url: string | null
     role: string | null
   }
+}
+
+
+interface MemberSummary {
+  id: string
+  full_name: string | null
+  avatar_url: string | null
+  profession: string | null
+  role: string | null
+  isFollowing?: boolean
 }
 
 const fetcher = async <T,>(url: string): Promise<T> => {
@@ -121,7 +137,7 @@ function UserCard({
   initialIsFollowing = false,
   onFollowToggle,
 }: {
-  user: any
+  user: MemberSummary
   isOnline?: boolean
   currentUserId?: string | null
   initialIsFollowing?: boolean
@@ -130,6 +146,10 @@ function UserCard({
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing)
   const [isToggling, setIsToggling] = useState(false)
   const isSelf = currentUserId === member.id
+
+  useEffect(() => {
+    setIsFollowing(initialIsFollowing)
+  }, [initialIsFollowing])
 
   const handleFollowToggle = useCallback(async () => {
     if (!currentUserId || isSelf || isToggling) return
@@ -156,7 +176,7 @@ function UserCard({
     <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
       <div className="relative">
         <Avatar className="h-10 w-10">
-          <AvatarImage src={member.avatar_url} alt={member.full_name} />
+          <AvatarImage src={member.avatar_url || undefined} alt={member.full_name || undefined} />
           <AvatarFallback>{member.full_name?.[0] || 'U'}</AvatarFallback>
         </Avatar>
         {isOnline && <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-background rounded-full" />}
@@ -205,6 +225,7 @@ export function EnhancedSocialFeed() {
   const { userId, profile, resolvedRole } = useAuth()
   const [newPostContent, setNewPostContent] = useState('')
   const [newPostImage, setNewPostImage] = useState<string | null>(null)
+  const [newPostVisibility, setNewPostVisibility] = useState<'public' | 'followers' | 'private'>('public')
   const [isPosting, setIsPosting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -213,6 +234,9 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [newPostsCount, setNewPostsCount] = useState(0)
   const [mentionSearch, setMentionSearch] = useState('')
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
@@ -283,26 +307,26 @@ export function EnhancedSocialFeed() {
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userBookmarks) ?? []), [feedPages])
 
-  const lastStableOnlineUsers = useRef<any[]>([])
-  const lastStableMembers = useRef<any[]>([])
-  const lastStableDiscovery = useRef<any[]>([])
+  const lastStableOnlineUsers = useRef<MemberSummary[]>([])
+  const lastStableMembers = useRef<MemberSummary[]>([])
+  const lastStableDiscovery = useRef<MemberSummary[]>([])
 
   const onlineUsers = useMemo(() => {
-    const data = (onlineUsersData as any)?.data
+    const data = (onlineUsersData as { data?: MemberSummary[] } | undefined)?.data
     if (!data && lastStableOnlineUsers.current.length > 0) return lastStableOnlineUsers.current
     if (data) lastStableOnlineUsers.current = data
     return data || []
   }, [onlineUsersData])
 
   const members = useMemo(() => {
-    const data = (membersData as any)?.data
+    const data = (membersData as { data?: MemberSummary[] } | undefined)?.data
     if (!data && lastStableMembers.current.length > 0) return lastStableMembers.current
     if (data) lastStableMembers.current = data
     return data || []
   }, [membersData])
 
   const discoverySuggestions = useMemo(() => {
-    const data = (discoveryData as any)?.data
+    const data = (discoveryData as { data?: MemberSummary[] } | undefined)?.data
     if (!data && lastStableDiscovery.current.length > 0) return lastStableDiscovery.current
     if (data) lastStableDiscovery.current = data
     return data || []
@@ -314,10 +338,10 @@ export function EnhancedSocialFeed() {
   const isLoadingMore = feedValidating && feedPages && feedPages.length === size && hasMore
 
   const mergedOnlineUsers = useMemo(() => {
-    const byId = new Map<string, any>()
-    onlineUsers.forEach((member: any) => byId.set(member.id, member))
-    members.filter((member: any) => realtimeOnlineIds.has(member.id)).forEach((member: any) => byId.set(member.id, member))
-    if (userId && (realtimeOnlineIds.has(userId) || onlineUsers.some((member: any) => member.id === userId))) {
+    const byId = new Map<string, MemberSummary>()
+    onlineUsers.forEach((member: MemberSummary) => byId.set(member.id, member))
+    members.filter((member: MemberSummary) => realtimeOnlineIds.has(member.id)).forEach((member: MemberSummary) => byId.set(member.id, member))
+    if (userId && (realtimeOnlineIds.has(userId) || onlineUsers.some((member: MemberSummary) => member.id === userId))) {
       byId.set(userId, {
         id: userId,
         full_name: profile?.full_name || 'You',
@@ -552,6 +576,7 @@ export function EnhancedSocialFeed() {
   const handlePostCreate = useCallback(async (opts?: { asShare?: boolean; sourcePost?: FeedPost | null; contentOverride?: string }) => {
     const content = opts?.contentOverride ?? newPostContent
     if (!userId || !content.trim()) return toast.error('Please write something to post')
+    if (content.trim().length > 2000) return toast.error('Post must be 2000 characters or less')
 
     const tempId = `optimistic-${Date.now()}`
     setIsPosting(true)
@@ -580,6 +605,7 @@ export function EnhancedSocialFeed() {
           post_type: newPostImage ? 'image' : 'text',
           category: 'general',
           metadata: opts?.asShare && opts.sourcePost ? { shared_post_id: opts.sourcePost.id } : {},
+          visibility: newPostVisibility,
         }),
       })
       const payload = await response.json()
@@ -596,6 +622,7 @@ export function EnhancedSocialFeed() {
       setNewPostImage(null)
       setShareTargetPost(null)
       setShareNote('')
+      setNewPostVisibility('public')
       toast.success(opts?.asShare ? 'Shared to your feed' : 'Post created!')
     } catch (error: any) {
       // Roll back the optimistic entry by revalidating from the server
@@ -687,6 +714,38 @@ export function EnhancedSocialFeed() {
     }
   }, [mutateFeed])
 
+
+  const handleEditPost = useCallback(async () => {
+    if (!editingPost || !editContent.trim()) {
+      toast.error('Post content cannot be empty')
+      return
+    }
+    if (editContent.trim().length > 2000) {
+      toast.error('Post must be 2000 characters or less')
+      return
+    }
+
+    setIsSavingEdit(true)
+    try {
+      const response = await fetch(`/api/feed/posts/${editingPost.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editContent.trim() }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Failed to update post')
+
+      patchFeed((post) => post.id === editingPost.id ? { ...post, content: editContent.trim() } : post)
+      toast.success('Post updated')
+      setEditingPost(null)
+      setEditContent('')
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update post')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }, [editContent, editingPost, patchFeed])
+
   if (!userId) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -700,6 +759,8 @@ export function EnhancedSocialFeed() {
       </div>
     )
   }
+
+  const postLength = newPostContent.trim().length
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -755,16 +816,16 @@ export function EnhancedSocialFeed() {
                   <Card className="absolute z-50 left-0 right-0 top-full mt-1 shadow-xl border-primary/20 overflow-hidden">
                     <ScrollArea className="max-h-[200px]">
                       <div className="p-1">
-                        {members.filter((m: any) =>
+                        {members.filter((m: MemberSummary) =>
                           (m.full_name || '').toLowerCase().includes(mentionSearch.toLowerCase())
-                        ).slice(0, 5).map((m: any) => (
+                        ).slice(0, 5).map((m: MemberSummary) => (
                           <button
                             key={m.id}
                             className="w-full flex items-center gap-2 p-2 hover:bg-muted text-left text-sm rounded-md transition-colors"
                             onClick={() => insertMention(m.full_name || 'member')}
                           >
                             <Avatar className="h-6 w-6">
-                              <AvatarImage src={m.avatar_url} />
+                              <AvatarImage src={m.avatar_url || undefined} />
                               <AvatarFallback>{(m.full_name || 'U')[0]}</AvatarFallback>
                             </Avatar>
                             <span className="font-medium">{m.full_name}</span>
@@ -783,17 +844,30 @@ export function EnhancedSocialFeed() {
                     </Button>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" onClick={() => document.getElementById('post-image-input')?.click()} disabled={isUploading}>
                       {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
                       <span className="ml-2 hidden sm:inline">Photo</span>
                     </Button>
                     <input id="post-image-input" type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleImageUpload(file); e.target.value = '' }} />
+                    <Select value={newPostVisibility} onValueChange={(v: 'public' | 'followers' | 'private') => setNewPostVisibility(v)}>
+                      <SelectTrigger className="h-8 w-[140px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="public">Public</SelectItem>
+                        <SelectItem value="followers">Followers</SelectItem>
+                        <SelectItem value="private">Only me</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Button onClick={() => handlePostCreate()} disabled={isPosting || !newPostContent.trim()} size="sm">
-                    {isPosting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}Post
-                  </Button>
+                  <div className="flex items-center gap-3">
+                    <span className={cn('text-xs', postLength > 2000 ? 'text-destructive' : 'text-muted-foreground')}>{postLength}/2000</span>
+                    <Button onClick={() => handlePostCreate()} disabled={isPosting || !newPostContent.trim() || postLength > 2000} size="sm">
+                      {isPosting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}Post
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -849,6 +923,10 @@ export function EnhancedSocialFeed() {
                   setShareNote(`Sharing @${post.profiles?.full_name || 'community'}: `)
                   setNewPostContent('')
                 }}
+                onEdit={() => {
+                  setEditingPost(post)
+                  setEditContent(post.content)
+                }}
               />
             ))
           )}
@@ -871,7 +949,7 @@ export function EnhancedSocialFeed() {
                 <div className="p-2">
                   {mergedOnlineUsers.length === 0
                     ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
-                    : mergedOnlineUsers.map((member: any) => (
+                    : mergedOnlineUsers.map((member: MemberSummary) => (
                         <UserCard
                           key={member.id}
                           user={member}
@@ -895,11 +973,11 @@ export function EnhancedSocialFeed() {
                 <div className="p-2 pt-0">
                   {members.length === 0
                     ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p>
-                    : members.map((member: any) => (
+                    : members.map((member: MemberSummary) => (
                         <UserCard
                           key={member.id}
                           user={member}
-                          isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)}
+                          isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: MemberSummary) => u.id === member.id)}
                           currentUserId={userId}
                           initialIsFollowing={member.isFollowing ?? false}
                           onFollowToggle={() => mutateMembers()}
@@ -918,11 +996,11 @@ export function EnhancedSocialFeed() {
                       <div className="h-px flex-1 bg-border" />
                     </div>
                     <div className="rounded-lg border bg-muted/20 overflow-hidden">
-                      {discoverySuggestions.map((suggestion: any) => (
+                      {discoverySuggestions.map((suggestion: MemberSummary) => (
                         <UserCard
                           key={suggestion.id}
                           user={suggestion}
-                          isOnline={realtimeOnlineIds.has(suggestion.id) || onlineUsers.some((u: any) => u.id === suggestion.id)}
+                          isOnline={realtimeOnlineIds.has(suggestion.id) || onlineUsers.some((u: MemberSummary) => u.id === suggestion.id)}
                           currentUserId={userId}
                           initialIsFollowing={false}
                           onFollowToggle={() => { mutateMembers(); mutateDiscovery() }}
@@ -936,6 +1014,24 @@ export function EnhancedSocialFeed() {
           </Tabs>
         </Card>
       </aside>
+
+      <Dialog open={!!editingPost} onOpenChange={(open) => !open && setEditingPost(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit post</DialogTitle></DialogHeader>
+          <Textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="min-h-[120px]"
+          />
+          <div className="flex items-center justify-between">
+            <span className={cn('text-xs', editContent.trim().length > 2000 ? 'text-destructive' : 'text-muted-foreground')}>{editContent.trim().length}/2000</span>
+            <Button onClick={() => { void handleEditPost() }} disabled={isSavingEdit || !editContent.trim() || editContent.trim().length > 2000}>
+              {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Share dialog */}
       <Dialog open={!!shareTargetPost} onOpenChange={(open) => !open && setShareTargetPost(null)}>
@@ -981,6 +1077,7 @@ function PostCard({
   onDelete,
   onComment,
   onOpenShare,
+  onEdit,
 }: {
   post: FeedPost
   isOwner: boolean
@@ -991,6 +1088,7 @@ function PostCard({
   onDelete: () => void
   onComment: (postId: string, content: string, parentCommentId?: string) => Promise<void>
   onOpenShare: () => void
+  onEdit: () => void
 }) {
   const [showComments, setShowComments] = useState(false)
   const [commentInput, setCommentInput] = useState('')
@@ -1055,15 +1153,24 @@ function PostCard({
             </div>
           </div>
           {isOwner && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={onEdit}>
+                <Edit3 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-3">
         <p className="whitespace-pre-wrap leading-relaxed">{post.content}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {post.visibility === 'followers' ? <Users2 className="h-3.5 w-3.5" /> : post.visibility === 'private' ? <Lock className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
+          <span className="capitalize">{post.visibility || 'public'}</span>
+        </div>
 
         {post.metadata?.shared_post_id && (
           <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm">
@@ -1168,6 +1275,7 @@ function CommentItem({
   onReply: (prefix: string, parentId: string) => void
 }) {
   const replies = allComments.filter((c) => c.parent_comment_id === comment.id)
+
   return (
     <div className="space-y-3 animate-in fade-in slide-in-from-left-2 duration-200 mt-3">
       <div className="group rounded-md bg-muted/40 p-3 hover:bg-muted/60 transition-colors border border-transparent hover:border-primary/10 shadow-sm">
