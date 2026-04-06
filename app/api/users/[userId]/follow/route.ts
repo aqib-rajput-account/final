@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
-import { enforceRateLimit } from '@/lib/infrastructure/rate-limit'
+import { enforceMultiScopeThrottle } from '@/backend/safety/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 
 export const dynamic = 'force-dynamic'
@@ -64,17 +64,20 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot follow yourself' }, { status: 400 })
     }
 
-    const rateLimit = await enforceRateLimit({
-      namespace: 'follow-write',
-      identifier: user.id,
+    const throttle = await enforceMultiScopeThrottle({
+      request,
+      userId: user.id,
+      action: 'follow-write',
       windowSeconds: 60,
-      maxRequests: 20,
+      accountLimit: 20,
+      ipLimit: Number.MAX_SAFE_INTEGER,
+      deviceLimit: Number.MAX_SAFE_INTEGER,
     })
 
-    if (!rateLimit.allowed) {
+    if (!throttle.allowed) {
       return NextResponse.json(
-        { error: 'Rate limit exceeded', retryAfterSeconds: rateLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+        { error: 'Rate limit exceeded', retryAfterSeconds: throttle.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(throttle.retryAfterSeconds) } }
       )
     }
 
@@ -83,7 +86,11 @@ export async function POST(
       following_id: targetUserId,
     })
 
-    if (error && error.code !== '23505') {
+    if (error) {
+      // Unique constraint violation — already following, treat as no-op
+      if (error.code === '23505') {
+        return NextResponse.json({ success: true })
+      }
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -139,17 +146,20 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const rateLimit = await enforceRateLimit({
-      namespace: 'follow-write',
-      identifier: user.id,
+    const throttle = await enforceMultiScopeThrottle({
+      request,
+      userId: user.id,
+      action: 'follow-write',
       windowSeconds: 60,
-      maxRequests: 20,
+      accountLimit: 20,
+      ipLimit: Number.MAX_SAFE_INTEGER,
+      deviceLimit: Number.MAX_SAFE_INTEGER,
     })
 
-    if (!rateLimit.allowed) {
+    if (!throttle.allowed) {
       return NextResponse.json(
-        { error: 'Rate limit exceeded', retryAfterSeconds: rateLimit.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+        { error: 'Rate limit exceeded', retryAfterSeconds: throttle.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(throttle.retryAfterSeconds) } }
       )
     }
 

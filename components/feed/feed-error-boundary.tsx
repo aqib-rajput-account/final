@@ -16,6 +16,10 @@ export class FeedErrorBoundary extends React.Component<React.PropsWithChildren, 
     return { hasError: true }
   }
 
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[FeedErrorBoundary] Unhandled React error:', error, info)
+  }
+
   render() {
     if (this.state.hasError) {
       return (

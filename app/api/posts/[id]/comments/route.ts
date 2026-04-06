@@ -70,16 +70,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
     }
 
-    const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
-    if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
-      return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
-    }
-
     const body = await request.json()
     const { content, parent_comment_id } = body
 
     if (!content || content.trim().length === 0) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 })
+    }
+
+    const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
+    if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
+      return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 
     const { data: comment, error } = await supabase

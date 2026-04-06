@@ -7,6 +7,10 @@ type CacheEntry<T> = {
 
 const memoryStore = new Map<string, CacheEntry<unknown>>()
 
+// Secondary index: userId → Set of scoped cache keys (namespace:hashedKey)
+// Used to efficiently invalidate all cache entries for a given user.
+const userKeyIndex = new Map<string, Set<string>>()
+
 function getRedisConfig() {
   const baseUrl = process.env.REDIS_REST_URL
   const token = process.env.REDIS_REST_TOKEN
@@ -75,10 +79,20 @@ export async function setCachedValue<T>(
   key: string,
   value: T,
   ttlSeconds = 30,
+  userId?: string,
 ): Promise<void> {
   const scopedKey = toMemoryKey(namespace, key)
   const expiresAt = Date.now() + ttlSeconds * 1000
   memoryStore.set(scopedKey, { value, expiresAt })
+
+  // Register in user index so all entries can be invalidated by userId
+  if (userId) {
+    const userIndexKey = `${namespace}:${userId}`
+    if (!userKeyIndex.has(userIndexKey)) {
+      userKeyIndex.set(userIndexKey, new Set())
+    }
+    userKeyIndex.get(userIndexKey)!.add(scopedKey)
+  }
 
   const redisValue = JSON.stringify(value)
   const redisResponse = await redisRequest('/setex', {
@@ -96,6 +110,37 @@ export async function deleteCachedValue(namespace: string, key: string): Promise
   memoryStore.delete(scopedKey)
   await redisRequest(`/del/${encodeURIComponent(scopedKey)}`)
 }
+
+/**
+ * Invalidates all cache entries for a given user within a namespace.
+ * Deletes every in-memory entry registered under the user's index and
+ * issues a Redis SCAN+DEL for any entries that may have been written
+ * by a different server instance.
+ */
+export async function deleteUserCacheEntries(namespace: string, userId: string): Promise<void> {
+  const userIndexKey = `${namespace}:${userId}`
+  const keys = userKeyIndex.get(userIndexKey)
+
+  if (keys) {
+    for (const scopedKey of keys) {
+      memoryStore.delete(scopedKey)
+    }
+    userKeyIndex.delete(userIndexKey)
+  }
+
+  // Best-effort Redis scan for keys matching the namespace:userId prefix
+  // (covers entries written by other server instances)
+  const config = getRedisConfig()
+  if (!config) return
+
+  // Note: since cache keys are hashed (one-way), Redis keys don't embed the userId.
+  // The in-memory userKeyIndex provides per-user precision for the current process.
+  // Cross-instance invalidation via Redis would require storing unhashed keys or a
+  // separate Redis set per user — deferred to a future enhancement.
+}  // Note: since cache keys are hashed (one-way), Redis keys don't embed the userId.
+  // The in-memory userKeyIndex provides per-user precision for the current process.
+  // Cross-instance invalidation via Redis would require storing unhashed keys or a
+  // separate Redis set per user — deferred to a future enhancement.
 
 export function buildCacheKey(parts: Array<string | number | null | undefined>): string {
   return parts

@@ -30,6 +30,8 @@ import {
   Reply,
   Repeat2,
   ArrowUp,
+  Link2,
+  Check,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -69,6 +71,7 @@ interface FeedPage {
   userLikes: string[]
   userBookmarks: string[]
   nextCursor: string | null
+  totalCount?: number | null
 }
 
 interface PostComment {
@@ -111,7 +114,44 @@ function PostSkeleton() {
   )
 }
 
-function UserCard({ user: member, isOnline = false }: { user: any; isOnline?: boolean }) {
+function UserCard({
+  user: member,
+  isOnline = false,
+  currentUserId,
+  initialIsFollowing = false,
+  onFollowToggle,
+}: {
+  user: any
+  isOnline?: boolean
+  currentUserId?: string | null
+  initialIsFollowing?: boolean
+  onFollowToggle?: (memberId: string, nowFollowing: boolean) => void
+}) {
+  const [isFollowing, setIsFollowing] = useState(initialIsFollowing)
+  const [isToggling, setIsToggling] = useState(false)
+  const isSelf = currentUserId === member.id
+
+  const handleFollowToggle = useCallback(async () => {
+    if (!currentUserId || isSelf || isToggling) return
+    const next = !isFollowing
+    setIsFollowing(next)
+    setIsToggling(true)
+    try {
+      const res = await fetch(`/api/users/${member.id}/follow`, { method: next ? 'POST' : 'DELETE' })
+      if (!res.ok) {
+        setIsFollowing(!next)
+        toast.error(next ? 'Failed to follow' : 'Failed to unfollow')
+      } else {
+        onFollowToggle?.(member.id, next)
+      }
+    } catch {
+      setIsFollowing(!next)
+      toast.error('Network error')
+    } finally {
+      setIsToggling(false)
+    }
+  }, [currentUserId, isSelf, isToggling, isFollowing, member.id, onFollowToggle])
+
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
       <div className="relative">
@@ -127,8 +167,25 @@ function UserCard({ user: member, isOnline = false }: { user: any; isOnline?: bo
         </Link>
         <p className="text-xs text-muted-foreground truncate">{member.profession || member.role || 'Member'}</p>
       </div>
-      {isOnline && (
+      {isOnline && !currentUserId && (
         <Badge variant="secondary" className="text-xs shrink-0">Online</Badge>
+      )}
+      {currentUserId && !isSelf && (
+        <Button
+          variant={isFollowing ? 'secondary' : 'outline'}
+          size="sm"
+          className="h-7 px-2 text-xs shrink-0"
+          onClick={handleFollowToggle}
+          disabled={isToggling}
+        >
+          {isToggling ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : isFollowing ? (
+            <><UserCheck className="h-3 w-3 mr-1" />Following</>
+          ) : (
+            <>Follow</>
+          )}
+        </Button>
       )}
     </div>
   )
@@ -151,6 +208,7 @@ export function EnhancedSocialFeed() {
   const [isPosting, setIsPosting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'online' | 'members'>('online')
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
@@ -165,7 +223,7 @@ export function EnhancedSocialFeed() {
   const getKey = useCallback((pageIndex: number, previousPageData: FeedPage | null) => {
     if (!userId) return null
     if (previousPageData && !previousPageData.nextCursor) return null
-    const params = new URLSearchParams({ limit: '10' })
+    const params = new URLSearchParams({ limit: '20' })
     if (pageIndex > 0 && previousPageData?.nextCursor) {
       params.set('cursor', previousPageData.nextCursor)
     }
@@ -190,7 +248,15 @@ export function EnhancedSocialFeed() {
   })
 
   const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
-  const { data: membersData, mutate: mutateMembers } = useSWR(userId ? '/api/users/community' : null, fetcher)
+  const { data: discoveryData, mutate: mutateDiscovery } = useSWR(userId ? '/api/users/community?mode=discovery' : null, fetcher)
+  const membersUrl = useMemo(() => {
+    if (!userId) return null
+    const params = new URLSearchParams()
+    if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
+    const qs = params.toString()
+    return qs ? `/api/users/community?${qs}` : '/api/users/community'
+  }, [userId, debouncedSearch])
+  const { data: membersData, mutate: mutateMembers } = useSWR(membersUrl, fetcher)
 
   const lastStablePosts = useRef<FeedPost[]>([])
   const posts = useMemo(() => {
@@ -217,16 +283,7 @@ export function EnhancedSocialFeed() {
 
   const onlineUsers = (onlineUsersData as any)?.data || []
   const members = (membersData as any)?.data || []
-
-  const filteredMembers = useMemo(() => {
-    if (!searchQuery.trim()) return members
-    const query = searchQuery.toLowerCase()
-    return members.filter((member: any) =>
-      member.full_name?.toLowerCase().includes(query) ||
-      member.profession?.toLowerCase().includes(query) ||
-      member.role?.toLowerCase().includes(query)
-    )
-  }, [members, searchQuery])
+  const discoverySuggestions = (discoveryData as any)?.data || []
 
   const realtimeOnlineIds = useMemo(() => new Set(Object.keys(realtimeOnline)), [realtimeOnline])
 
@@ -318,8 +375,9 @@ export function EnhancedSocialFeed() {
     if (event.eventType === 'follow.created' || event.eventType === 'follow.deleted') {
       mutateMembers()
       mutateOnlineUsers()
+      mutateDiscovery()
     }
-  }, [mutateMembers, mutateOnlineUsers, mutateFeed, patchFeed, userId])
+  }, [mutateMembers, mutateOnlineUsers, mutateDiscovery, mutateFeed, patchFeed, userId])
 
   /**
    * Prepend new posts from other users without resetting scroll position.
@@ -328,7 +386,7 @@ export function EnhancedSocialFeed() {
   const refreshFeedPosts = useCallback(async () => {
     setNewPostsCount(0)
     try {
-      const res = await fetch('/api/feed/posts?limit=10')
+      const res = await fetch('/api/feed/posts?limit=20')
       if (!res.ok) return
       const freshPage: FeedPage = await res.json()
       mutateFeed((pages) => {
@@ -377,6 +435,11 @@ export function EnhancedSocialFeed() {
       setRealtimeOnline(flattened)
     },
   })
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   useEffect(() => {
     if (!observerRef.current || !hasMore || feedLoading) return
@@ -509,11 +572,8 @@ export function EnhancedSocialFeed() {
       setShareNote('')
       toast.success(opts?.asShare ? 'Shared to your feed' : 'Post created!')
     } catch (error: any) {
-      // Roll back the optimistic entry
-      mutateFeed((pages) => pages?.map((page) => ({
-        ...page,
-        data: page.data.filter((p) => p.id !== tempId),
-      })), false)
+      // Roll back the optimistic entry by revalidating from the server
+      mutateFeed()
       toast.error(error.message || 'Failed to create post')
     } finally {
       setIsPosting(false)
@@ -789,7 +849,16 @@ export function EnhancedSocialFeed() {
                 <div className="p-2">
                   {mergedOnlineUsers.length === 0
                     ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
-                    : mergedOnlineUsers.map((member: any) => <UserCard key={member.id} user={member} isOnline />)}
+                    : mergedOnlineUsers.map((member: any) => (
+                        <UserCard
+                          key={member.id}
+                          user={member}
+                          isOnline
+                          currentUserId={userId}
+                          initialIsFollowing={member.isFollowing ?? false}
+                          onFollowToggle={() => { mutateMembers(); mutateOnlineUsers() }}
+                        />
+                      ))}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -800,18 +869,46 @@ export function EnhancedSocialFeed() {
                   <Input placeholder="Search members..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" />
                 </div>
               </div>
-              <ScrollArea className="h-[340px]">
+              <ScrollArea className="h-[500px]">
                 <div className="p-2 pt-0">
-                  {filteredMembers.length === 0
+                  {members.length === 0
                     ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p>
-                    : filteredMembers.map((member: any) => (
+                    : members.map((member: any) => (
                         <UserCard
                           key={member.id}
                           user={member}
                           isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)}
+                          currentUserId={userId}
+                          initialIsFollowing={member.isFollowing ?? false}
+                          onFollowToggle={() => mutateMembers()}
                         />
                       ))}
                 </div>
+
+                {/* Discovery section */}
+                {discoverySuggestions.length > 0 && (
+                  <div className="px-2 pb-2">
+                    <div className="flex items-center gap-2 py-2 px-1">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+                        People you may know
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 overflow-hidden">
+                      {discoverySuggestions.map((suggestion: any) => (
+                        <UserCard
+                          key={suggestion.id}
+                          user={suggestion}
+                          isOnline={realtimeOnlineIds.has(suggestion.id) || onlineUsers.some((u: any) => u.id === suggestion.id)}
+                          currentUserId={userId}
+                          initialIsFollowing={false}
+                          onFollowToggle={() => { mutateMembers(); mutateDiscovery() }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </ScrollArea>
             </TabsContent>
           </Tabs>
@@ -877,6 +974,18 @@ function PostCard({
   const [commentInput, setCommentInput] = useState('')
   const [replyPrefix, setReplyPrefix] = useState('')
   const [replyToId, setReplyToId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyLink = useCallback(() => {
+    const url = `${window.location.origin}/feed?post=${post.id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      toast.success('Link copied to clipboard')
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {
+      toast.error('Failed to copy link')
+    })
+  }, [post.id])
 
   const { data: commentsResponse, mutate: mutateComments } = useSWR<{ comments: PostComment[] }>(
     showComments ? `/api/posts/${post.id}/comments` : null,
@@ -888,17 +997,18 @@ function PostCard({
   const submitComment = async () => {
     const payload = `${replyPrefix}${commentInput}`.trim()
     if (!payload) return
+    const targetParentId = replyToId
     const optimisticComment: PostComment = {
       id: `temp-${Date.now()}`,
       content: payload,
       created_at: new Date().toISOString(),
       author_id: 'self',
+      parent_comment_id: targetParentId ?? null,
       author: { id: 'self', full_name: 'You', avatar_url: null, role: 'user' },
     }
     mutateComments((current) => ({ comments: [...(current?.comments ?? []), optimisticComment] }), false)
     setCommentInput('')
     setReplyPrefix('')
-    const targetParentId = replyToId
     setReplyToId(null)
     await onComment(post.id, payload, targetParentId || undefined)
     mutateComments()
@@ -967,6 +1077,16 @@ function PostCard({
           </Button>
           <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}>
             <Share2 className="h-4 w-4" />Share
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('gap-2 transition-colors', copied && 'text-green-600')}
+            onClick={handleCopyLink}
+            title="Copy link to post"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+            {copied ? 'Copied!' : 'Copy link'}
           </Button>
           <Button
             variant="ghost"

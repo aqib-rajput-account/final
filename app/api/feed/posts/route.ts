@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
-import { buildCacheKey, deleteCachedValue, getCachedValue, hashCacheKey, setCachedValue } from '@/lib/infrastructure/cache'
+import { buildCacheKey, deleteUserCacheEntries, getCachedValue, hashCacheKey, setCachedValue } from '@/lib/infrastructure/cache'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 import { enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
 import {
@@ -116,12 +116,17 @@ export async function GET(request: Request) {
     const formattedPosts =
       posts
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
-        .map((post: any) => ({
-          ...post,
-          content: post.body, // Map DB 'body' to API 'content' for frontend compatibility
-          likes_count: post.like_count || 0,
-          comments_count: post.comment_count || 0,
-        })) || []
+        .map((post: any) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { body, like_count, comment_count, ...rest } = post
+          return {
+            ...rest,
+            content: body, // Map DB 'body' → API 'content'
+            likes_count: like_count || 0, // Map DB 'like_count' → API 'likes_count'
+            comments_count: comment_count || 0, // Map DB 'comment_count' → API 'comments_count'
+            visibility: rest.visibility === 'followers' || rest.visibility === 'private' ? rest.visibility : 'public', // Sanitize visibility
+          }
+        }) || []
 
     const postIds = formattedPosts.map((p: any) => p.id)
     let userLikes: string[] = []
@@ -175,7 +180,7 @@ export async function GET(request: Request) {
       })
     }
 
-    await setCachedValue('timeline', cacheKey, responsePayload, 20)
+    await setCachedValue('timeline', cacheKey, responsePayload, 20, userId)
 
     const timing = withServerTiming(startedAt)
     observeHistogram('feed.read.latency_ms', timing.durationMs, { cache: 'miss' })
@@ -248,11 +253,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { content, image_url, post_type, category, metadata, mosque_id, is_published, visibility } = body
+    const { content, image_url, post_type, category, metadata, mosque_id, visibility } = body
 
     if (!content || String(content).trim().length === 0) {
       observeCounter('feed.write.errors.total', 1, { reason: 'validation' })
       return NextResponse.json({ error: 'Post content is required' }, { status: 400 })
+    }
+
+    if (post_type === 'share' && !metadata?.shared_post_id) {
+      observeCounter('feed.write.errors.total', 1, { reason: 'validation' })
+      return NextResponse.json({ error: 'metadata.shared_post_id is required for share posts' }, { status: 400 })
     }
 
     const safeVisibility = visibility === 'private' || visibility === 'followers' ? visibility : 'public'
@@ -267,7 +277,7 @@ export async function POST(request: Request) {
         category: category ?? 'general',
         metadata: metadata ?? {},
         mosque_id: mosque_id ?? null,
-        is_published: is_published ?? true,
+        is_published: true, // Always publish on creation (Requirement 1.2)
         visibility: safeVisibility,
         like_count: 0,
         comment_count: 0,
@@ -281,32 +291,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const idempotencyKey = await resolveIdempotencyKey(request, `feed-post-create:${userId}:${post.id}`)
-    await publishRealtimeEvent({
-      eventType: 'post.created',
-      entityType: 'post',
-      entityId: String(post.id),
-      actorUserId: userId,
-      idempotencyKey,
-      feedStreamId: safeVisibility === 'private' ? undefined : 'home',
-      payload: {
-        postId: post.id,
-        authorId: userId,
-        visibility: safeVisibility,
-        traceId,
-        publishedAt: new Date().toISOString(),
-      },
-    })
+    if (safeVisibility === 'public' || safeVisibility === 'followers') {
+      const idempotencyKey = await resolveIdempotencyKey(request, `feed-post-create:${userId}:${post.id}`)
+      void publishRealtimeEvent({
+        eventType: 'post.created',
+        entityType: 'post',
+        entityId: String(post.id),
+        actorUserId: userId,
+        idempotencyKey,
+        feedStreamId: 'home',
+        payload: {
+          postId: post.id,
+          authorId: userId,
+          visibility: safeVisibility,
+          traceId,
+          publishedAt: new Date().toISOString(),
+        },
+      })
 
-    await enqueueWork({
-      queue: 'fanout',
-      taskType: 'feed.post.created',
-      payload: {
-        postId: String(post.id),
-        authorId: userId,
-      },
-      traceId,
-    })
+      void enqueueWork({
+        queue: 'fanout',
+        taskType: 'feed.post.created',
+        payload: {
+          postId: String(post.id),
+          authorId: userId,
+        },
+        traceId,
+      })
+    }
 
     await enqueueWork({
       queue: 'notifications',
@@ -328,7 +340,7 @@ export async function POST(request: Request) {
       traceId,
     })
 
-    await deleteCachedValue('timeline', hashCacheKey(buildCacheKey([userId, 20, 0, null])))
+    await deleteUserCacheEntries('timeline', userId)
 
     const timing = withServerTiming(startedAt)
     observeHistogram('feed.write.latency_ms', timing.durationMs, { operation: 'create_post' })
