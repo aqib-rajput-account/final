@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { Header } from "@/components/layout";
 import { Footer } from "@/components/layout";
 import { useAuth } from "@/lib/auth";
+import { hasClerkPublishableKey } from "@/lib/config";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,17 +23,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, User, Mail, Phone, Shield, Calendar } from "lucide-react";
+import { Loader2, Upload, Mail, Phone, Shield, Calendar } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { profile, userId, isSignedIn, loading: authLoading, refreshProfile } = useAuth();
+  const { profile, userId, isSignedIn, loading: authLoading, refreshProfile, resolvedRole } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [bootstrappingProfile, setBootstrappingProfile] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
     phone: "",
     bio: "",
+    avatar_url: "",
   });
 
   useEffect(() => {
@@ -47,6 +51,7 @@ export default function ProfilePage() {
         username: profile.username || "",
         phone: profile.phone || "",
         bio: profile.bio || "",
+        avatar_url: profile.avatar_url || "",
       });
     }
   }, [profile]);
@@ -64,6 +69,7 @@ export default function ProfilePage() {
           username: formData.username || null,
           phone: formData.phone || null,
           bio: formData.bio || null,
+          avatar_url: formData.avatar_url || null,
         })
         .eq("id", userId);
 
@@ -85,6 +91,28 @@ export default function ProfilePage() {
     }
   };
 
+  const handlePhotoUploaded = async (imageUrl: string) => {
+    if (!userId) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: imageUrl })
+        .eq("id", userId);
+
+      if (error) {
+        toast.error("Photo uploaded but failed to sync profile");
+      } else {
+        toast.success("Profile photo updated");
+        setFormData((prev) => ({ ...prev, avatar_url: imageUrl }));
+      }
+
+      await refreshProfile();
+    } catch {
+      toast.error("Failed to sync profile photo");
+    }
+  };
+
   const getInitials = (name: string | null | undefined) => {
     if (!name) return "U";
     return name
@@ -103,8 +131,61 @@ export default function ProfilePage() {
     );
   }
 
-  if (!isSignedIn || !profile) {
+  if (!isSignedIn) {
     return null;
+  }
+
+  const handleBootstrapProfile = async () => {
+    setBootstrappingProfile(true);
+    try {
+      const response = await fetch("/api/profile/bootstrap", { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create profile");
+      }
+      await refreshProfile();
+      toast.success("Profile is ready");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to set up profile");
+    } finally {
+      setBootstrappingProfile(false);
+    }
+  };
+
+  if (!profile) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <Header />
+        <main className="flex-1 bg-muted/30">
+          <div className="mx-auto max-w-3xl px-4 py-8 lg:px-8">
+            <Card>
+              <CardHeader>
+                <CardTitle>Setting up your profile</CardTitle>
+                <CardDescription>
+                  We could not find your profile yet. Click below to create it now.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button onClick={handleBootstrapProfile} disabled={bootstrappingProfile}>
+                  {bootstrappingProfile ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Profile...
+                    </>
+                  ) : (
+                    "Create My Profile"
+                  )}
+                </Button>
+                <Button variant="outline" onClick={() => refreshProfile()} disabled={bootstrappingProfile}>
+                  Retry
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   return (
@@ -130,7 +211,7 @@ export default function ProfilePage() {
                       </h1>
                       <Badge variant="secondary" className="w-fit capitalize">
                         <Shield className="h-3 w-3 mr-1" />
-                        {profile.role}
+                        {resolvedRole || profile.role}
                       </Badge>
                     </div>
                     {profile.username && (
@@ -153,6 +234,9 @@ export default function ProfilePage() {
                         {new Date(profile.created_at).toLocaleDateString()}
                       </div>
                     </div>
+                    {hasClerkPublishableKey ? (
+                      <ClerkPhotoUploader onUploaded={handlePhotoUploaded} />
+                    ) : null}
                   </div>
                 </div>
               </CardContent>
@@ -218,6 +302,18 @@ export default function ProfilePage() {
                       rows={4}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="avatar_url">Profile Photo URL</Label>
+                    <Input
+                      id="avatar_url"
+                      type="url"
+                      value={formData.avatar_url}
+                      onChange={(e) =>
+                        setFormData({ ...formData, avatar_url: e.target.value })
+                      }
+                      placeholder="https://example.com/photo.jpg"
+                    />
+                  </div>
 
                   <Separator />
 
@@ -276,7 +372,7 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <Badge variant="outline" className="capitalize">
-                    {profile.role}
+                    {resolvedRole || profile.role}
                   </Badge>
                 </div>
               </CardContent>
@@ -289,3 +385,68 @@ export default function ProfilePage() {
   );
 }
 
+function ClerkPhotoUploader({ onUploaded }: { onUploaded: (imageUrl: string) => Promise<void> }) {
+  const { user } = useUser();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload JPG, PNG, WEBP or GIF image");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be smaller than 5MB");
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      await user.setProfileImage({ file });
+      await user.reload();
+      const imageUrl = user.imageUrl;
+      if (!imageUrl) {
+        toast.error("Failed to get uploaded image URL");
+        return;
+      }
+      await onUploaded(imageUrl);
+    } catch {
+      toast.error("Failed to upload profile photo");
+    } finally {
+      setUploadingPhoto(false);
+      event.target.value = "";
+    }
+  };
+
+  return (
+    <div>
+      <Label htmlFor="profile-photo" className="cursor-pointer inline-flex">
+        <span className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+          {uploadingPhoto ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Change Photo
+            </>
+          )}
+        </span>
+      </Label>
+      <Input
+        id="profile-photo"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={handlePhotoUpload}
+        className="hidden"
+        disabled={uploadingPhoto}
+      />
+    </div>
+  );
+}

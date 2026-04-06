@@ -1,9 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { useClerk, useUser } from "@clerk/nextjs";
+import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/nextjs";
 import { createClient } from "@/lib/supabase/client";
-import { hasFullAuthConfig } from "@/lib/config";
+import { hasClerkPublishableKey, hasFullAuthConfig, hasSupabaseBrowserEnv } from "@/lib/config";
+import { normalizeClerkRole } from "./clerk-rbac";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -48,12 +49,16 @@ interface AuthContextType {
   hasRole: (roles: UserRole[]) => boolean;
   canAccess: (requiredRole: UserRole) => boolean;
   isSignedIn: boolean;
+  resolvedRole: UserRole | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  if (!hasFullAuthConfig) {
+  // Defensive merge-safe guard: supports both consolidated and split runtime flags.
+  const hasConfiguredAuth = hasFullAuthConfig || (hasClerkPublishableKey && hasSupabaseBrowserEnv);
+
+  if (!hasConfiguredAuth) {
     return <FallbackAuthProvider>{children}</FallbackAuthProvider>;
   }
 
@@ -61,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
+  const { orgRole } = useClerkAuth();
   const { user, isLoaded: isClerkLoaded, isSignedIn } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -148,15 +154,24 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
   };
 
+  const clerkRole = normalizeClerkRole(orgRole);
+  const resolvedRole: UserRole | null = profile
+    ? profile.role === "super_admin"
+      ? "super_admin"
+      : clerkRole !== "member"
+        ? clerkRole
+        : profile.role
+    : null;
+
   const hasRole = (roles: UserRole[]) => {
-    if (!profile) return false;
-    if (profile.role === "super_admin") return true;
-    return roles.includes(profile.role);
+    if (!resolvedRole) return false;
+    if (resolvedRole === "super_admin") return true;
+    return roles.includes(resolvedRole);
   };
 
   const canAccess = (requiredRole: UserRole) => {
-    if (!profile) return false;
-    return hasRoleOrHigher(profile.role, requiredRole);
+    if (!resolvedRole) return false;
+    return hasRoleOrHigher(resolvedRole, requiredRole);
   };
 
   const loading = !isClerkLoaded || profileLoading;
@@ -167,14 +182,15 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signOut,
     refreshProfile,
-    isSuperAdmin: profile?.role === "super_admin",
-    isAdmin: profile?.role === "admin" || profile?.role === "super_admin",
-    isShura: profile?.role === "shura" || profile?.role === "admin" || profile?.role === "super_admin",
-    isImam: profile?.role === "imam" || hasRoleOrHigher(profile?.role ?? "member", "imam"),
+    isSuperAdmin: resolvedRole === "super_admin",
+    isAdmin: resolvedRole === "admin" || resolvedRole === "super_admin",
+    isShura: resolvedRole === "shura" || resolvedRole === "admin" || resolvedRole === "super_admin",
+    isImam: resolvedRole === "imam" || hasRoleOrHigher(resolvedRole ?? "member", "imam"),
     isMember: Boolean(profile),
     hasRole,
     canAccess,
     isSignedIn: isSignedIn ?? false,
+    resolvedRole,
   };
 
   if (supabaseError) {
@@ -208,6 +224,7 @@ function FallbackAuthProvider({ children }: { children: React.ReactNode }) {
     hasRole: () => false,
     canAccess: () => false,
     isSignedIn: false,
+    resolvedRole: null,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

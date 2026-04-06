@@ -28,7 +28,7 @@ export function ProtectedRoute({
   requiredPermission,
   fallback,
 }: ProtectedRouteProps) {
-  const { isSignedIn, profile, loading } = useAuth();
+  const { isSignedIn, profile, loading, resolvedRole } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -89,7 +89,7 @@ export function ProtectedRoute({
   }
 
   // Check role-based access
-  const userRole = profile.role;
+  const userRole = resolvedRole ?? profile.role;
   let isAuthorized = true;
 
   if (requiredRoles && requiredRoles.length > 0) {
