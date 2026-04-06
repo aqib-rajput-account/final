@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { canAccessAdminPanel, canAccessShuraPanel, normalizeClerkRole } from "@/lib/auth/clerk-rbac";
 
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -15,9 +16,23 @@ const isPublicRoute = createRouteMatcher([
   "/prayer-times",
 ]);
 
+const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
+const isShuraRoute = createRouteMatcher(["/shura(.*)"]);
+
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
     await auth.protect();
+  }
+
+  const { orgRole } = await auth();
+  const role = normalizeClerkRole(orgRole);
+
+  if (isAdminRoute(request) && !canAccessAdminPanel(role)) {
+    return NextResponse.redirect(new URL("/unauthorized", request.url));
+  }
+
+  if (isShuraRoute(request) && !canAccessShuraPanel(role)) {
+    return NextResponse.redirect(new URL("/unauthorized", request.url));
   }
 });
 

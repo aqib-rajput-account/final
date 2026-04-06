@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { auth } from "@clerk/nextjs/server";
+import { canManageAllMosques, normalizeClerkRole } from "@/lib/auth/clerk-rbac";
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ mosques });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -48,25 +50,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    const { userId, orgRole } = await auth();
+
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user has admin or shura role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    const role = normalizeClerkRole(orgRole);
+    if (!canManageAllMosques(role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
-    const isAdminOrShura = ["admin", "shura"].includes(profile.role);
 
     const body = await request.json();
     const {
@@ -114,8 +107,8 @@ export async function POST(request: NextRequest) {
         facilities,
         capacity,
         established_year,
-        admin_id: user.id,
-        is_verified: isAdminOrShura ? (body.is_verified ?? true) : false,
+        admin_id: userId,
+        is_verified: body.is_verified ?? true,
       })
       .select()
       .single();
@@ -125,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ mosque }, { status: 201 });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
