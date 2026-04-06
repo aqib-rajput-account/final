@@ -6,6 +6,7 @@ import { useUser } from "@clerk/nextjs";
 import { Header } from "@/components/layout";
 import { Footer } from "@/components/layout";
 import { useAuth } from "@/lib/auth";
+import { hasClerkPublishableKey } from "@/lib/config";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,15 +27,14 @@ import { Loader2, Upload, Mail, Phone, Shield, Calendar } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user } = useUser();
-  const { profile, userId, isSignedIn, loading: authLoading, refreshProfile } = useAuth();
+  const { profile, userId, isSignedIn, loading: authLoading, refreshProfile, resolvedRole } = useAuth();
   const [saving, setSaving] = useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
     phone: "",
     bio: "",
+    avatar_url: "",
   });
 
   useEffect(() => {
@@ -50,6 +50,7 @@ export default function ProfilePage() {
         username: profile.username || "",
         phone: profile.phone || "",
         bio: profile.bio || "",
+        avatar_url: profile.avatar_url || "",
       });
     }
   }, [profile]);
@@ -59,12 +60,6 @@ export default function ProfilePage() {
     setSaving(true);
 
     try {
-      if (user && formData.full_name) {
-        const [firstName, ...rest] = formData.full_name.trim().split(" ");
-        const lastName = rest.join(" ") || null;
-        await user.update({ firstName: firstName || null, lastName });
-      }
-
       const supabase = createClient();
       const { error } = await supabase
         .from("profiles")
@@ -73,6 +68,7 @@ export default function ProfilePage() {
           username: formData.username || null,
           phone: formData.phone || null,
           bio: formData.bio || null,
+          avatar_url: formData.avatar_url || null,
         })
         .eq("id", userId);
 
@@ -94,43 +90,25 @@ export default function ProfilePage() {
     }
   };
 
-  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !userId || !user) return;
-
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error("Please upload JPG, PNG, WEBP or GIF image");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be smaller than 5MB");
-      return;
-    }
-
-    setUploadingPhoto(true);
+  const handlePhotoUploaded = async (imageUrl: string) => {
+    if (!userId) return;
     try {
-      await user.setProfileImage({ file });
-
       const supabase = createClient();
       const { error } = await supabase
         .from("profiles")
-        .update({ avatar_url: user.imageUrl })
+        .update({ avatar_url: imageUrl })
         .eq("id", userId);
 
       if (error) {
-        toast.error("Profile photo updated in Clerk, but failed to sync local profile");
+        toast.error("Photo uploaded but failed to sync profile");
       } else {
         toast.success("Profile photo updated");
+        setFormData((prev) => ({ ...prev, avatar_url: imageUrl }));
       }
 
       await refreshProfile();
     } catch {
-      toast.error("Failed to upload profile photo");
-    } finally {
-      setUploadingPhoto(false);
-      event.target.value = "";
+      toast.error("Failed to sync profile photo");
     }
   };
 
@@ -179,7 +157,7 @@ export default function ProfilePage() {
                       </h1>
                       <Badge variant="secondary" className="w-fit capitalize">
                         <Shield className="h-3 w-3 mr-1" />
-                        {profile.role}
+                        {resolvedRole || profile.role}
                       </Badge>
                     </div>
                     {profile.username && (
@@ -202,31 +180,9 @@ export default function ProfilePage() {
                         {new Date(profile.created_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <div>
-                      <Label htmlFor="profile-photo" className="cursor-pointer inline-flex">
-                        <span className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
-                          {uploadingPhoto ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Uploading...
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="mr-2 h-4 w-4" />
-                              Change Photo
-                            </>
-                          )}
-                        </span>
-                      </Label>
-                      <Input
-                        id="profile-photo"
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
-                        disabled={uploadingPhoto}
-                      />
-                    </div>
+                    {hasClerkPublishableKey ? (
+                      <ClerkPhotoUploader onUploaded={handlePhotoUploaded} />
+                    ) : null}
                   </div>
                 </div>
               </CardContent>
@@ -292,6 +248,18 @@ export default function ProfilePage() {
                       rows={4}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="avatar_url">Profile Photo URL</Label>
+                    <Input
+                      id="avatar_url"
+                      type="url"
+                      value={formData.avatar_url}
+                      onChange={(e) =>
+                        setFormData({ ...formData, avatar_url: e.target.value })
+                      }
+                      placeholder="https://example.com/photo.jpg"
+                    />
+                  </div>
 
                   <Separator />
 
@@ -350,7 +318,7 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <Badge variant="outline" className="capitalize">
-                    {profile.role}
+                    {resolvedRole || profile.role}
                   </Badge>
                 </div>
               </CardContent>
@@ -359,6 +327,72 @@ export default function ProfilePage() {
         </div>
       </main>
       <Footer />
+    </div>
+  );
+}
+
+function ClerkPhotoUploader({ onUploaded }: { onUploaded: (imageUrl: string) => Promise<void> }) {
+  const { user } = useUser();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Please upload JPG, PNG, WEBP or GIF image");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be smaller than 5MB");
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      await user.setProfileImage({ file });
+      await user.reload();
+      const imageUrl = user.imageUrl;
+      if (!imageUrl) {
+        toast.error("Failed to get uploaded image URL");
+        return;
+      }
+      await onUploaded(imageUrl);
+    } catch {
+      toast.error("Failed to upload profile photo");
+    } finally {
+      setUploadingPhoto(false);
+      event.target.value = "";
+    }
+  };
+
+  return (
+    <div>
+      <Label htmlFor="profile-photo" className="cursor-pointer inline-flex">
+        <span className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground">
+          {uploadingPhoto ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Change Photo
+            </>
+          )}
+        </span>
+      </Label>
+      <Input
+        id="profile-photo"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={handlePhotoUpload}
+        className="hidden"
+        disabled={uploadingPhoto}
+      />
     </div>
   );
 }

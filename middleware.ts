@@ -26,6 +26,13 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
 
   const { orgRole } = await auth();
   const role = normalizeClerkRole(orgRole);
+  const hasOrgRole = Boolean(orgRole);
+
+  // If organization roles are not configured on this session,
+  // skip strict route RBAC here and let app-level profile guards handle access.
+  if (!hasOrgRole) {
+    return NextResponse.next();
+  }
 
   if (isAdminRoute(request) && !canAccessAdminPanel(role)) {
     return NextResponse.redirect(new URL("/unauthorized", request.url));

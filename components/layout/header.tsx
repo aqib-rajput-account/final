@@ -49,7 +49,7 @@ export function Header() {
   const pathname = usePathname()
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { profile, signOut, loading, isAdmin, isShura, isSignedIn } = useAuth()
+  const { profile, signOut, loading, isAdmin, isShura, isSignedIn, resolvedRole } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -173,7 +173,7 @@ export function Header() {
                     <div className="px-3 py-3 mb-1 bg-muted/30 rounded-xl">
                       <p className="text-sm font-bold truncate">{profile?.full_name || 'User'}</p>
                       <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mt-0.5 opacity-70">
-                        {profile?.role || 'Member'} Role
+                        {resolvedRole || profile?.role || 'Member'} Role
                       </p>
                       <p className="text-xs text-muted-foreground truncate mt-1.5 opacity-80">{profile?.email || 'Guest access'}</p>
                     </div>
