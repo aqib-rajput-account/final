@@ -59,3 +59,14 @@ This ensures Clerk users are upserted into Supabase `profiles` even if webhook d
   - Your deployment URL is added in Clerk allowed origins/redirects.
 - If social sign-in is needed, enable that provider in Clerk Dashboard before adding social buttons in UI.
 - If sign-up says your password was found in a data breach, either use a new unique password or leave password empty to continue with email-code verification.
+
+## Release scope for merge to `main`
+
+This branch is ready to merge to `main` with the currently implemented features, including:
+
+- Clerk sign-up/sign-in flow (email/password and email-code flow)
+- Clerk webhook + on-demand profile sync to Supabase
+- Imam role and permission updates
+- Middleware and route fixes needed for Vercel production builds
+
+Note: Google social sign-in UI is not included yet in this scope. To add Google auth, enable Google in the Clerk Dashboard and then wire the social button flow in the sign-in/sign-up pages.
