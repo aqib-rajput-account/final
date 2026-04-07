@@ -19,15 +19,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Invalid file type. Only images are allowed.' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid file type. Only images and videos are allowed.' }, { status: 400 })
     }
 
-    // Validate size (max 5MB)
-    const maxSize = 5 * 1024 * 1024
+    // Validate size (max 50MB)
+    const maxSize = 50 * 1024 * 1024
     if (file.size > maxSize) {
-      return NextResponse.json({ error: 'File too large. Maximum size is 5MB.' }, { status: 400 })
+      return NextResponse.json({ error: 'File too large. Maximum size is 50MB.' }, { status: 400 })
     }
 
     // Create Admin Client for bypassing RLS during Bucket setup/upload

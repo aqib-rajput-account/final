@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import {
-  Heart, MessageCircle, Share2, ImageIcon, Loader2, Search, Users, UserCheck, Send, X, Trash2, Bookmark, Reply, Repeat2, ArrowUp, Link2, Check,
+  Heart, MessageCircle, Share2, ImageIcon, Video, Loader2, Search, Users, UserCheck, Send, X, Trash2, Bookmark, Reply, Repeat2, ArrowUp, Link2, Check,
   MoreHorizontal, Calendar, MapPin, CheckCircle, Quote, Megaphone, HandHeart, BookOpen, Building2, User, Shield, ChevronDown
 } from 'lucide-react'
 import Link from 'next/link'
@@ -249,7 +249,7 @@ export function EnhancedSocialFeed() {
   }
 
   const handleImageUpload = async (file: File) => {
-    if (!file.type.startsWith('image/')) return toast.error('Please select an image file')
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) return toast.error('Please select an image or video file')
     setIsUploading(true)
     try {
       const formData = new FormData()
@@ -354,7 +354,11 @@ export function EnhancedSocialFeed() {
                   <div className="animate-in fade-in slide-in-from-top-2">
                     {newPostImage && (
                       <div className="relative inline-block mb-3">
-                        <img src={newPostImage} alt="Upload" className="rounded-xl max-h-48 object-cover border border-border/50" />
+                        {newPostImage.match(/\.(mp4|webm|mov|quicktime)$/i) ? (
+                           <video src={newPostImage} controls className="rounded-xl max-h-48 object-cover border border-border/50" />
+                        ) : (
+                           <img src={newPostImage} alt="Upload" className="rounded-xl max-h-48 object-cover border border-border/50" />
+                        )}
                         <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-7 w-7 rounded-full shadow-sm" onClick={() => setNewPostImage(null)}><X className="h-3 w-3" /></Button>
                       </div>
                     )}
@@ -374,10 +378,10 @@ export function EnhancedSocialFeed() {
 
                     <div className="flex items-center justify-between border-t border-border/50 pt-3">
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="rounded-full text-primary hover:bg-primary/10" onClick={() => document.getElementById('img-upload')?.click()} disabled={isUploading}>
-                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-5 w-5" />}
+                        <Button variant="ghost" size="sm" className="rounded-full text-primary hover:bg-primary/10" onClick={() => document.getElementById('img-upload')?.click()} title="Upload Image or Video" disabled={isUploading}>
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ImageIcon className="h-5 w-5 mr-1" /><Video className="h-5 w-5" /></>}
                         </Button>
-                        <input id="img-upload" type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) handleImageUpload(f) }} />
+                        <input id="img-upload" type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) handleImageUpload(f) }} />
                       </div>
                       <div className="flex items-center gap-3">
                         <Button variant="ghost" size="sm" className="rounded-full text-xs" onClick={() => { setIsComposeExpanded(false); setNewPostContent(''); setNewPostImage(null) }}>Cancel</Button>
@@ -547,7 +551,11 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
 
          {post.image_url && (
            <div className="mt-4 -mx-4 sm:mx-0 overflow-hidden sm:rounded-xl">
-             <img src={post.image_url} className="w-full object-cover max-h-[500px] hover:opacity-95 transition-opacity" loading="lazy" alt="Post attachment" />
+             {post.image_url.match(/\.(mp4|webm|mov|quicktime)$/i) ? (
+               <video src={post.image_url} controls className="w-full max-h-[500px] bg-black" />
+             ) : (
+               <img src={post.image_url} className="w-full object-cover max-h-[500px] hover:opacity-95 transition-opacity" loading="lazy" alt="Post attachment" />
+             )}
            </div>
          )}
       </CardContent>
