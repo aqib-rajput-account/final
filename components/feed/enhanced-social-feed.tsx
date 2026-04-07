@@ -466,7 +466,36 @@ export function EnhancedSocialFeed() {
 }
 
 function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, onDelete }: any) {
+  const { userId, profile } = useAuth()
   const [copied, setCopied] = useState(false)
+  const [showComments, setShowComments] = useState(false)
+  const [newComment, setNewComment] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
+
+  const { data: commentsData, mutate: mutateComments } = useSWR(showComments ? `/api/posts/${post.id}/comments` : null, fetcher)
+  const comments = (commentsData as any)?.comments || []
+  const loadingComments = showComments && !commentsData
+
+  const handlePostComment = async () => {
+    if (!newComment.trim() || postingComment) return
+    setPostingComment(true)
+    try {
+      const res = await fetch(`/api/posts/${post.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newComment.trim() })
+      })
+      if (!res.ok) throw new Error()
+      mutateComments()
+      setNewComment('')
+      post.comments_count = (post.comments_count || 0) + 1
+    } catch {
+      toast.error('Failed to post comment')
+    } finally {
+      setPostingComment(false)
+    }
+  }
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/feed?post=${post.id}`)
     setCopied(true)
@@ -569,7 +598,7 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
                <Heart className={cn("h-4 w-4", isLiked && "fill-rose-600 like-bounce")} />
                <span className="text-xs font-medium">{post.likes_count > 0 ? post.likes_count : 'Like'}</span>
             </Button>
-            <Button variant="ghost" size="sm" className="rounded-full gap-2 px-3 hover:bg-blue-500/10 hover:text-blue-600 transition-colors">
+            <Button variant="ghost" size="sm" className="rounded-full gap-2 px-3 hover:bg-blue-500/10 hover:text-blue-600 transition-colors" onClick={() => setShowComments(!showComments)}>
                <MessageCircle className="h-4 w-4" />
                <span className="text-xs font-medium">{post.comments_count > 0 ? post.comments_count : 'Comment'}</span>
             </Button>
@@ -582,6 +611,53 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
             <Bookmark className={cn("h-4 w-4", isBookmarked && "fill-current")} />
          </Button>
       </CardFooter>
+      {showComments && (
+        <div className="px-4 pb-4 bg-muted/5 border-t border-border/30">
+          <div className="flex items-start gap-3 pt-3">
+             <Avatar className="h-8 w-8 shrink-0">
+               <AvatarImage src={profile?.avatar_url || ''} />
+               <AvatarFallback>{profile?.full_name?.[0] || 'U'}</AvatarFallback>
+             </Avatar>
+             <div className="flex-1 flex gap-2">
+               <Input 
+                 placeholder="Write a comment..." 
+                 value={newComment}
+                 onChange={(e) => setNewComment(e.target.value)}
+                 className="rounded-full h-9 bg-background focus-visible:ring-1"
+                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
+               />
+               <Button size="icon" className="h-9 w-9 shrink-0 rounded-full" onClick={handlePostComment} disabled={!newComment.trim() || postingComment} title="Send">
+                 {postingComment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 ml-0.5" />}
+               </Button>
+             </div>
+          </div>
+          <div className="mt-4 space-y-3">
+             {loadingComments ? (
+               <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+             ) : comments.length === 0 ? (
+               <div className="text-center text-sm text-muted-foreground py-2">No comments yet.</div>
+             ) : (
+               comments.map((comment: any) => (
+                 <div key={comment.id} className="flex items-start gap-2.5 group">
+                   <Avatar className="h-7 w-7 mt-0.5 shrink-0">
+                     <AvatarImage src={comment.author?.avatar_url || ''} />
+                     <AvatarFallback>{comment.author?.full_name?.[0] || 'U'}</AvatarFallback>
+                   </Avatar>
+                   <div className="flex-1 min-w-0">
+                     <div className="bg-muted/40 rounded-2xl rounded-tl-sm px-3 py-2 text-sm max-w-full inline-block">
+                        <span className="font-semibold block text-xs mb-0.5 text-foreground/90">{comment.author?.full_name || 'Anonymous'}</span>
+                        <span className="whitespace-pre-wrap break-words">{comment.content}</span>
+                     </div>
+                     <div className="text-[11px] text-muted-foreground pl-3 pt-1">
+                        {comment.created_at ? formatDistanceToNow(new Date(comment.created_at)) + ' ago' : 'Just now'}
+                     </div>
+                   </div>
+                 </div>
+               ))
+             )}
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
