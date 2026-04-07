@@ -1,8 +1,14 @@
-import { extractFeedAttachmentsFromMetadata, getPrimaryLegacyImageUrl, normalizeFeedAttachments, type FeedMediaAttachment } from '@/lib/feed/media'
+import { canViewerAccessPostRecord } from '@/lib/feed-visibility'
+import {
+  extractFeedAttachmentsFromMetadata,
+  getPrimaryLegacyImageUrl,
+  normalizeFeedAttachments,
+  type FeedMediaAttachment,
+} from '@/lib/feed/media'
 
-export const FEED_POST_SELECT = `
+const FEED_SELECT_BASE = `
   id,
-  body,
+  __CONTENT_FIELD__,
   image_url,
   post_type,
   category,
@@ -21,6 +27,13 @@ export const FEED_POST_SELECT = `
     role
   )
 `
+
+type FeedSelectMode = 'body' | 'content'
+
+const FEED_POST_SELECTS: Record<FeedSelectMode, string> = {
+  body: FEED_SELECT_BASE.replace('__CONTENT_FIELD__', 'body'),
+  content: FEED_SELECT_BASE.replace('__CONTENT_FIELD__', 'content'),
+}
 
 export interface NormalizedFeedPost {
   id: string
@@ -83,6 +96,29 @@ function mapCountRows(rows: Array<{ post_id: string | number }>) {
   }
 
   return counts
+}
+
+function resolvePostContent(post: Record<string, unknown>) {
+  if (typeof post.body === 'string') return post.body
+  if (typeof post.content === 'string') return post.content
+  return ''
+}
+
+function buildFeedSearchHaystack(post: Record<string, unknown>) {
+  const metadata = ensureObject(post.metadata)
+  const profile = normalizeProfile(post.profiles)
+  const attachmentNames = normalizeFeedAttachments(metadata.attachments).map((attachment) => attachment.name ?? '')
+
+  return [
+    resolvePostContent(post),
+    profile?.full_name ?? '',
+    profile?.profession ?? '',
+    typeof post.category === 'string' ? post.category : '',
+    typeof post.post_type === 'string' ? post.post_type : '',
+    attachmentNames.join(' '),
+  ]
+    .join(' ')
+    .toLowerCase()
 }
 
 async function fetchCommentRows(
@@ -161,6 +197,139 @@ function deriveLegacyMedia(post: Record<string, unknown>) {
   return []
 }
 
+async function runFeedPostListQuery(args: {
+  supabase: any
+  mode: FeedSelectMode
+  cursor: string | null
+  limit: number
+}) {
+  const { supabase, mode, cursor, limit } = args
+
+  let query = supabase
+    .from('posts')
+    .select(FEED_POST_SELECTS[mode])
+    .eq('is_published', true)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (cursor) {
+    query = query.lt('created_at', cursor)
+  }
+
+  return query
+}
+
+async function runFeedPostByIdQuery(supabase: any, postId: string, mode: FeedSelectMode) {
+  return supabase.from('posts').select(FEED_POST_SELECTS[mode]).eq('id', postId).single()
+}
+
+export async function listFeedPostRows(args: {
+  supabase: any
+  cursor: string | null
+  limit: number
+}) {
+  const primary = await runFeedPostListQuery({ ...args, mode: 'body' })
+  if (!primary.error) {
+    return primary.data ?? []
+  }
+
+  const fallback = await runFeedPostListQuery({ ...args, mode: 'content' })
+  if (!fallback.error) {
+    return fallback.data ?? []
+  }
+
+  throw primary.error ?? fallback.error
+}
+
+export async function fetchFeedPostRowById(supabase: any, postId: string) {
+  const primary = await runFeedPostByIdQuery(supabase, postId, 'body')
+  if (!primary.error && primary.data) {
+    return primary.data as Record<string, unknown>
+  }
+
+  const fallback = await runFeedPostByIdQuery(supabase, postId, 'content')
+  if (!fallback.error && fallback.data) {
+    return fallback.data as Record<string, unknown>
+  }
+
+  return null
+}
+
+export async function fetchPostAccessRecordById(supabase: any, postId: string) {
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, author_id, visibility, metadata, is_published')
+    .eq('id', postId)
+    .single()
+
+  if (error || !data) {
+    return null
+  }
+
+  return data as Record<string, unknown>
+}
+
+export async function filterVisibleFeedPosts(
+  supabase: any,
+  posts: Array<Record<string, unknown>>,
+  viewerId: string | null
+) {
+  if (posts.length === 0) return []
+
+  const authorsRequiringFollowCheck = viewerId
+    ? Array.from(
+        new Set(
+          posts
+            .filter((post) => post.visibility === 'followers' && String(post.author_id ?? '') !== viewerId)
+            .map((post) => String(post.author_id ?? ''))
+            .filter(Boolean)
+        )
+      )
+    : []
+
+  let followedAuthorIds = new Set<string>()
+  if (viewerId && authorsRequiringFollowCheck.length > 0) {
+    const { data } = await supabase
+      .from('user_follows')
+      .select('following_id')
+      .eq('follower_id', viewerId)
+      .in('following_id', authorsRequiringFollowCheck)
+
+    followedAuthorIds = new Set((data ?? []).map((row: { following_id: string | number }) => String(row.following_id)))
+  }
+
+  return posts.filter((post) => canViewerAccessPostRecord(post, viewerId, followedAuthorIds))
+}
+
+export async function canViewerAccessPost(
+  supabase: any,
+  post: Record<string, unknown>,
+  viewerId: string | null
+) {
+  if (!viewerId) {
+    return canViewerAccessPostRecord(post, null)
+  }
+
+  const authorId = String(post.author_id ?? '')
+  if (post.visibility !== 'followers' || !authorId || authorId === viewerId) {
+    return canViewerAccessPostRecord(post, viewerId)
+  }
+
+  const { data } = await supabase
+    .from('user_follows')
+    .select('following_id')
+    .eq('follower_id', viewerId)
+    .eq('following_id', authorId)
+    .maybeSingle()
+
+  return canViewerAccessPostRecord(post, viewerId, new Set(data ? [authorId] : []))
+}
+
+export function matchesFeedSearchQuery(post: Record<string, unknown>, q: string | null) {
+  if (!q) return true
+  return buildFeedSearchHaystack(post).includes(q.trim().toLowerCase())
+}
+
 export async function enrichFeedPosts(
   supabase: any,
   posts: Array<Record<string, unknown>>,
@@ -206,12 +375,7 @@ export async function enrichFeedPosts(
 
     return {
       id: postId,
-      content:
-        typeof post.body === 'string'
-          ? post.body
-          : typeof post.content === 'string'
-            ? post.content
-            : '',
+      content: resolvePostContent(post),
       created_at: typeof post.created_at === 'string' ? post.created_at : new Date().toISOString(),
       updated_at:
         typeof post.updated_at === 'string'
@@ -255,11 +419,16 @@ export async function fetchNormalizedFeedPostById(
   postId: string,
   viewerId: string | null
 ) {
-  const response = await supabase.from('posts').select(FEED_POST_SELECT).eq('id', postId).single()
-  if (response.error || !response.data) {
+  const row = await fetchFeedPostRowById(supabase, postId)
+  if (!row) {
     return null
   }
 
-  const enriched = await enrichFeedPosts(supabase, [response.data], viewerId)
+  const canView = await canViewerAccessPost(supabase, row, viewerId)
+  if (!canView) {
+    return null
+  }
+
+  const enriched = await enrichFeedPosts(supabase, [row], viewerId)
   return enriched.posts[0] ?? null
 }

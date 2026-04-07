@@ -5,6 +5,7 @@ import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 import { canUsersInteract, enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
+import { canViewerAccessPost, fetchPostAccessRecordById } from '@/lib/feed-utils'
 
 type NormalizedComment = {
   id: string
@@ -74,14 +75,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id: postId } = await params
     const supabase = await createClient()
     const userId = await resolveAuthenticatedUserId(request)
-    const comments = await fetchComments(supabase, postId)
+    const post = await fetchPostAccessRecordById(supabase, postId)
 
-    if (!userId) {
-      return NextResponse.json({ comments })
+    if (!post || !(await canViewerAccessPost(supabase, post, userId))) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     }
 
-    const hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
-    return NextResponse.json({ comments: comments.filter((comment: NormalizedComment) => !hiddenUsers.has(comment.author_id)) })
+    const comments = await fetchComments(supabase, postId)
+
+    if (userId) {
+      const hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
+      return NextResponse.json({ comments: comments.filter((comment: NormalizedComment) => !hiddenUsers.has(comment.author_id)) })
+    }
+
+    return NextResponse.json({ comments })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
   }
@@ -114,8 +121,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
     }
 
-    const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
-    if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
+    const post = await fetchPostAccessRecordById(supabase, postId)
+    if (!post || !(await canViewerAccessPost(supabase, post, userId))) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+    }
+
+    if (post.author_id && !(await canUsersInteract(supabase, userId, String(post.author_id)))) {
       return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 

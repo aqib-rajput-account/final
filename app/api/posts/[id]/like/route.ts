@@ -4,10 +4,15 @@ import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { canUsersInteract, enforceMultiScopeThrottle } from '@/backend/safety/service'
+import { canViewerAccessPost, fetchPostAccessRecordById } from '@/lib/feed-utils'
 
 async function ensureInteractionAllowed(supabase: any, postId: string, userId: string) {
-  const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
-  if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
+  const post = await fetchPostAccessRecordById(supabase, postId)
+  if (!post || !(await canViewerAccessPost(supabase, post, userId))) {
+    return false
+  }
+
+  if (post.author_id && !(await canUsersInteract(supabase, userId, String(post.author_id)))) {
     return false
   }
 
@@ -114,6 +119,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         { error: 'Rate limit exceeded', retryAfterSeconds: throttle.retryAfterSeconds },
         { status: 429, headers: { 'Retry-After': String(throttle.retryAfterSeconds) } }
       )
+    }
+
+    const canInteract = await ensureInteractionAllowed(supabase, postId, userId)
+    if (!canInteract) {
+      return NextResponse.json({ error: 'Interaction forbidden due to post visibility or block settings' }, { status: 403 })
     }
 
     const { error } = await supabase

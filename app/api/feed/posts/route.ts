@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
@@ -14,7 +14,14 @@ import {
 } from '@/lib/infrastructure/observability'
 import { evaluateTimelineLagAlert } from '@/lib/infrastructure/alerts'
 import { validateTimelineConsistency } from '@/lib/infrastructure/data-quality'
-import { FEED_POST_SELECT, enrichFeedPosts, fetchNormalizedFeedPostById } from '@/lib/feed-utils'
+import {
+  enrichFeedPosts,
+  fetchNormalizedFeedPostById,
+  filterVisibleFeedPosts,
+  listFeedPostRows,
+  matchesFeedSearchQuery,
+} from '@/lib/feed-utils'
+import { applyAudienceToMetadata, getSelectedViewerIds, normalizeStoredVisibility } from '@/lib/feed-visibility'
 import {
   getPrimaryLegacyImageUrl,
   isAnnouncementFeedPost,
@@ -50,6 +57,39 @@ function normalizeSearchQuery(raw: string | null) {
   return trimmed.length > 0 ? trimmed : null
 }
 
+function normalizeAudiencePayload(
+  requestedVisibility: unknown,
+  metadata: Record<string, unknown>
+) {
+  const selectedViewerIds = getSelectedViewerIds(metadata)
+  const audience =
+    requestedVisibility === 'selected'
+      ? 'selected'
+      : requestedVisibility === 'private'
+        ? 'private'
+        : requestedVisibility === 'followers'
+          ? 'followers'
+          : 'public'
+
+  if (audience === 'selected' && selectedViewerIds.length === 0) {
+    return {
+      error: 'Select at least one friend before sharing with selected friends',
+    }
+  }
+
+  const audienceMetadata = applyAudienceToMetadata(metadata, audience, selectedViewerIds)
+
+  return {
+    audience,
+    audienceMetadata,
+    selectedViewerIds,
+    storedVisibility: normalizeStoredVisibility(
+      typeof requestedVisibility === 'string' ? requestedVisibility : 'public',
+      audienceMetadata
+    ),
+  }
+}
+
 async function persistPostMedia(supabase: any, postId: string, attachments: ReturnType<typeof normalizeFeedAttachments>) {
   if (attachments.length === 0) {
     await supabase.from('post_media').delete().eq('post_id', postId)
@@ -78,56 +118,97 @@ async function persistPostMedia(supabase: any, postId: string, attachments: Retu
   }
 }
 
+async function insertPostWithContentFallback(
+  supabase: any,
+  payload: {
+    author_id: string
+    content: string
+    image_url: string | null
+    post_type: string
+    category: string
+    metadata: Record<string, unknown>
+    mosque_id: string | null
+    is_published: boolean
+    visibility: string
+  }
+) {
+  const sharedInsert = {
+    author_id: payload.author_id,
+    image_url: payload.image_url,
+    post_type: payload.post_type,
+    category: payload.category,
+    metadata: payload.metadata,
+    mosque_id: payload.mosque_id,
+    is_published: payload.is_published,
+    visibility: payload.visibility,
+  }
+
+  const primary = await supabase
+    .from('posts')
+    .insert({
+      ...sharedInsert,
+      body: payload.content,
+    })
+    .select('id')
+    .single()
+
+  if (!primary.error && primary.data) {
+    return primary.data
+  }
+
+  const fallback = await supabase
+    .from('posts')
+    .insert({
+      ...sharedInsert,
+      content: payload.content,
+    })
+    .select('id')
+    .single()
+
+  if (!fallback.error && fallback.data) {
+    return fallback.data
+  }
+
+  throw primary.error ?? fallback.error ?? new Error('Failed to create post')
+}
+
 async function fetchFilteredPosts(args: {
   supabase: any
+  viewerId: string
   hiddenUsers: Set<string>
   feed: FeedFilter
   q: string | null
   cursor: string | null
   limit: number
 }) {
-  const { supabase, hiddenUsers, feed, q, cursor, limit } = args
-  const batchSize = Math.min(Math.max(limit * 4, limit + 1), 80)
+  const { supabase, viewerId, hiddenUsers, feed, q, cursor, limit } = args
+  const batchSize = q ? Math.min(Math.max(limit * 6, limit + 1), 120) : Math.min(Math.max(limit * 4, limit + 1), 80)
   const collected: Array<Record<string, unknown>> = []
   let nextQueryCursor = cursor
   let exhausted = false
   let loops = 0
 
-  while (collected.length < limit + 1 && !exhausted && loops < 6) {
+  while (collected.length < limit + 1 && !exhausted && loops < (q ? 12 : 6)) {
     loops += 1
 
-    let query = supabase
-      .from('posts')
-      .select(FEED_POST_SELECT)
-      .eq('is_published', true)
-      .in('visibility', ['public', 'followers'])
-      .order('created_at', { ascending: false })
-      .limit(batchSize)
+    const batch = (await listFeedPostRows({
+      supabase,
+      cursor: nextQueryCursor,
+      limit: batchSize,
+    })) as Array<Record<string, unknown>>
 
-    if (nextQueryCursor) {
-      query = query.lt('created_at', nextQueryCursor)
-    }
-
-    if (q) {
-      query = query.ilike('body', `%${q}%`)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      throw error
-    }
-
-    const batch = (data ?? []) as Array<Record<string, unknown>>
     if (batch.length === 0) {
       exhausted = true
       break
     }
 
-    for (const post of batch) {
+    const visibleBatch = await filterVisibleFeedPosts(supabase, batch, viewerId)
+
+    for (const post of visibleBatch) {
       const authorId = String(post.author_id ?? '')
       if (hiddenUsers.has(authorId)) continue
       if (!matchesFeedFilter(post, feed)) continue
+      if (!matchesFeedSearchQuery(post, q)) continue
       collected.push(post)
       if (collected.length >= limit + 1) break
     }
@@ -149,7 +230,7 @@ export async function GET(request: Request) {
   const traceId = getTraceIdFromRequest(request)
 
   try {
-    const { userId } = await auth()
+    const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
       observeCounter('feed.read.errors.total', 1, { reason: 'unauthorized' })
@@ -172,6 +253,7 @@ export async function GET(request: Request) {
 
     const { pagePosts, nextCursor } = await fetchFilteredPosts({
       supabase,
+      viewerId: userId,
       hiddenUsers,
       feed,
       q,
@@ -238,7 +320,7 @@ export async function POST(request: Request) {
 
   try {
     const supabase = await createClient()
-    const { userId } = await auth()
+    const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
       observeCounter('feed.write.errors.total', 1, { reason: 'unauthorized' })
@@ -289,7 +371,12 @@ export async function POST(request: Request) {
       typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : null,
       media
     )
-    const safeVisibility = body.visibility === 'private' || body.visibility === 'followers' ? body.visibility : 'public'
+    const visibilityPayload = normalizeAudiencePayload(body.visibility, normalizedMetadata)
+    if ('error' in visibilityPayload) {
+      observeCounter('feed.write.errors.total', 1, { reason: 'validation' })
+      return NextResponse.json({ error: visibilityPayload.error }, { status: 400 })
+    }
+
     const isAnnouncement = body.post_type === 'announcement'
     const inferredPostType = isAnnouncement
       ? 'announcement'
@@ -301,26 +388,28 @@ export async function POST(request: Request) {
             ? 'file'
             : 'text'
 
-    const { data: insertedPost, error } = await supabase
-      .from('posts')
-      .insert({
+    let insertedPost: { id: string } | null = null
+    try {
+      insertedPost = await insertPostWithContentFallback(supabase, {
         author_id: userId,
-        body: trimmedContent,
+        content: trimmedContent,
         image_url: getPrimaryLegacyImageUrl(media),
         post_type: inferredPostType,
         category: typeof body.category === 'string' ? body.category : isAnnouncement ? 'announcement' : 'general',
-        metadata: normalizedMetadata,
+        metadata: visibilityPayload.audienceMetadata,
         mosque_id: typeof body.mosque_id === 'string' ? body.mosque_id : null,
         is_published: typeof body.is_published === 'boolean' ? body.is_published : true,
-        visibility: safeVisibility,
+        visibility: visibilityPayload.storedVisibility,
       })
-      .select('id')
-      .single()
-
-    if (error || !insertedPost) {
+    } catch (error) {
       observeCounter('feed.write.errors.total', 1, { reason: 'insert_failed' })
       logWithTrace({ level: 'error', message: 'Post insert failed', traceId, error })
-      return NextResponse.json({ error: error?.message || 'Failed to create post' }, { status: 500 })
+      return NextResponse.json({ error: (error as Error)?.message || 'Failed to create post' }, { status: 500 })
+    }
+
+    if (!insertedPost) {
+      observeCounter('feed.write.errors.total', 1, { reason: 'insert_failed' })
+      return NextResponse.json({ error: 'Failed to create post' }, { status: 500 })
     }
 
     try {
@@ -341,11 +430,13 @@ export async function POST(request: Request) {
       entityId: String(insertedPost.id),
       actorUserId: userId,
       idempotencyKey,
-      feedStreamId: safeVisibility === 'private' ? undefined : 'home',
+      feedStreamId: visibilityPayload.audience === 'public' ? 'home' : undefined,
+      targetUserIds: visibilityPayload.audience === 'selected' ? visibilityPayload.selectedViewerIds : undefined,
       payload: {
         postId: insertedPost.id,
         authorId: userId,
-        visibility: safeVisibility,
+        visibility: visibilityPayload.storedVisibility,
+        audience: visibilityPayload.audience,
         traceId,
         publishedAt: new Date().toISOString(),
       },
