@@ -5,6 +5,71 @@ import { canManageAllMosques, normalizeClerkRole } from '@/lib/auth/clerk-rbac'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * GET /api/feed/posts/[id]
+ * Fetch a single post by ID — used for silent realtime injection.
+ * Returns the same shape as the feed list endpoint for seamless merging.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    const { userId } = await auth()
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: post, error } = await supabase
+      .from('posts')
+      .select(
+        `
+        id,
+        body,
+        image_url,
+        post_type,
+        category,
+        metadata,
+        visibility,
+        is_published,
+        created_at,
+        updated_at,
+        author_id,
+        mosque_id,
+        profiles:author_id(
+          id,
+          full_name,
+          avatar_url,
+          profession,
+          role
+        ),
+        like_count,
+        comment_count
+      `
+      )
+      .eq('id', id)
+      .single()
+
+    if (error || !post) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+    }
+
+    const formatted = {
+      ...post,
+      content: (post as any).body,
+      likes_count: (post as any).like_count || 0,
+      comments_count: (post as any).comment_count || 0,
+    }
+
+    return NextResponse.json({ post: formatted })
+  } catch {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

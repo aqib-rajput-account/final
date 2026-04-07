@@ -133,6 +133,14 @@
   .feed-refresh-glow {
     animation: feed-refresh-glow 1.6s ease-in-out infinite;
   }
+
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-md border-white/10 dark:border-white/5;
+  }
+
+  .animate-in-post {
+    animation: slide-down-fade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
 }
 
 @keyframes feed-refresh-glow {
@@ -149,5 +157,16 @@
   100% {
     transform: translateX(220%);
     opacity: 0;
+  }
+}
+
+@keyframes slide-down-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }

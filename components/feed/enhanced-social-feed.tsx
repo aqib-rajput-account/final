@@ -148,7 +148,6 @@ export function EnhancedSocialFeed() {
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
-  const [hasPendingRealtimeRefresh, setHasPendingRealtimeRefresh] = useState(false)
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -246,8 +245,57 @@ export function EnhancedSocialFeed() {
       return
     }
 
-    if (event.eventType === 'post.created' || event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
-      setHasPendingRealtimeRefresh(true)
+    if (event.eventType === 'post.created') {
+      const postId = String(event.payload.postId || event.entityId)
+      if (!postId) return
+      
+      // Fetch the full post details silently in the background
+      fetch(`/api/feed/posts/${postId}`)
+        .then(res => res.json())
+        .then(payload => {
+          if (payload.post) {
+            mutateFeed((pages) => {
+              if (!pages) return pages
+              // De-duplicate: check if post already exists in any page
+              const exists = pages.some(page => page.data.some(p => p.id === postId))
+              if (exists) return pages
+
+              // Inject at the top of the first page
+              const newPages = [...pages]
+              newPages[0] = {
+                ...newPages[0],
+                data: [payload.post, ...newPages[0].data]
+              }
+              return newPages
+            }, false)
+            
+            toast.success('New post from the community', {
+              description: payload.post.profiles?.full_name || 'Someone just posted',
+              duration: 3000,
+            })
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch realtime post:', err)
+          mutateFeed() // Fallback to full refresh on error
+        })
+      return
+    }
+
+    if (event.eventType === 'post.deleted') {
+      const postId = String(event.entityId)
+      mutateFeed((pages) => {
+        if (!pages) return pages
+        return pages.map(page => ({
+          ...page,
+          data: page.data.filter(p => p.id !== postId)
+        }))
+      }, false)
+      return
+    }
+
+    if (event.eventType === 'post.updated') {
+      mutateFeed() // Simple revalidate for updates
       return
     }
 
@@ -257,10 +305,6 @@ export function EnhancedSocialFeed() {
     }
   }, [mutateMembers, mutateOnlineUsers, patchFeed])
 
-  const refreshFeedPosts = useCallback(async () => {
-    await mutateFeed()
-    setHasPendingRealtimeRefresh(false)
-  }, [mutateFeed])
 
   useEffect(() => {
     const returnContext = resolveFeedReturnContext()
@@ -507,7 +551,7 @@ export function EnhancedSocialFeed() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <aside className="hidden lg:block lg:col-span-3">
-        <Card className="sticky top-20">
+        <Card className="sticky top-20 glass-card">
           <CardContent className="p-6">
             <div className="flex flex-col items-center text-center">
               <Avatar className="h-20 w-20 mb-4">
@@ -527,7 +571,7 @@ export function EnhancedSocialFeed() {
       </aside>
 
       <main className="lg:col-span-6 space-y-6">
-        <Card>
+        <Card className="glass-card shadow-lg border-none">
           <CardContent className="p-4">
             <div className="flex gap-3">
               <Avatar className="h-10 w-10 shrink-0">
@@ -561,16 +605,9 @@ export function EnhancedSocialFeed() {
         </Card>
 
         <div className="space-y-4 relative">
-          {(feedValidating || hasPendingRealtimeRefresh) && (
+          {feedValidating && (
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
-              <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
-            </div>
-          )}
-          {hasPendingRealtimeRefresh && (
-            <div className="flex justify-center">
-              <Button variant="secondary" size="sm" onClick={() => { void refreshFeedPosts() }}>
-                Show new posts
-              </Button>
+              <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
             </div>
           )}
           {feedLoading ? (
@@ -582,10 +619,10 @@ export function EnhancedSocialFeed() {
           ) : posts.length === 0 ? (
             <Card><CardContent className="p-8 text-center"><MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><h3 className="font-semibold mb-2">No posts yet</h3><p className="text-muted-foreground">Be the first to share something with the community!</p></CardContent></Card>
           ) : (
-            posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
+            posts.map((post, idx) => (
+              <div key={post.id} className={cn(idx === 0 && !feedLoading ? 'animate-in-post' : '')}>
+                <PostCard
+                  post={post}
                 isOwner={post.author_id === userId}
                 isLiked={userLikes.has(post.id)}
                 isBookmarked={userBookmarks.has(post.id)}
@@ -593,12 +630,13 @@ export function EnhancedSocialFeed() {
                 onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
                 onDelete={() => handleDeletePost(post.id)}
                 onComment={handleCommentCreate}
-                onOpenShare={() => {
-                  setShareTargetPost(post)
-                  setShareNote(`Sharing @${post.profiles?.full_name || 'community'}: `)
-                  setNewPostContent('')
-                }}
-              />
+                  onOpenShare={() => {
+                    setShareTargetPost(post)
+                    setShareNote(`Sharing @${post.profiles?.full_name || 'community'}: `)
+                    setNewPostContent('')
+                  }}
+                />
+              </div>
             ))
           )}
 
@@ -613,7 +651,7 @@ export function EnhancedSocialFeed() {
       </main>
 
       <aside className="hidden lg:block lg:col-span-3">
-        <Card className="sticky top-20">
+        <Card className="sticky top-20 glass-card">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'online' | 'members')}>
             <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="online" className="text-xs"><UserCheck className="h-3 w-3 mr-1" />Online ({mergedOnlineUsers.length})</TabsTrigger>
@@ -703,7 +741,7 @@ function PostCard({
   }
 
   return (
-    <Card>
+    <Card className="glass-card border-none shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
