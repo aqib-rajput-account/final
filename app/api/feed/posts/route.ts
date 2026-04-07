@@ -33,7 +33,9 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
     const offset = parseInt(searchParams.get('offset') || '0')
     const cursor = searchParams.get('cursor')
-    const cacheKey = hashCacheKey(buildCacheKey([userId, limit, offset, cursor]))
+    const category = searchParams.get('category')
+    
+    const cacheKey = hashCacheKey(buildCacheKey([userId, limit, offset, cursor, category]))
     const cachedResponse = await getCachedValue<{
       data: unknown[]
       userLikes: string[]
@@ -87,11 +89,17 @@ export async function GET(request: Request) {
         ),
         like_count,
         comment_count
-      `
+      `,
+        { count: 'planned' }
       )
       .eq('is_published', true)
       .in('visibility', ['public', 'followers'])
-      .order('created_at', { ascending: false })
+
+    if (category && category !== 'all') {
+      query = query.eq('category', category)
+    }
+
+    query = query.order('created_at', { ascending: false })
 
     if (cursor) {
       query = query.lt('created_at', cursor).limit(limit)

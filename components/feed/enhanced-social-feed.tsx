@@ -94,7 +94,7 @@ const fetcher = async <T,>(url: string): Promise<T> => {
 
 function PostSkeleton() {
   return (
-    <Card>
+    <Card className="glass-card">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 rounded-full" />
@@ -109,6 +109,28 @@ function PostSkeleton() {
         <Skeleton className="h-4 w-3/4" />
       </CardContent>
     </Card>
+  )
+}
+
+function FormattedContent({ content }: { content: string }) {
+  if (!content) return null
+  const parts = content.split(/(@[^\s.,!?;:]+)/g)
+  return (
+    <p className="whitespace-pre-wrap leading-relaxed text-sm sm:text-base">
+      {parts.map((part, i) =>
+        part.startsWith('@') ? (
+          <Link
+            key={i}
+            href={`/search?q=${encodeURIComponent(part.slice(1))}`}
+            className="text-primary hover:underline font-semibold bg-primary/5 px-1 rounded-sm"
+          >
+            {part}
+          </Link>
+        ) : (
+          part
+        )
+      )}
+    </p>
   )
 }
 
@@ -147,7 +169,9 @@ export function EnhancedSocialFeed() {
   const [activeTab, setActiveTab] = useState<'online' | 'members'>('online')
   const [realtimeOnline, setRealtimeOnline] = useState<Record<string, any>>({})
   const [shareTargetPost, setShareTargetPost] = useState<FeedPost | null>(null)
+  const [editTargetPost, setEditTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -155,11 +179,14 @@ export function EnhancedSocialFeed() {
     if (!userId) return null
     if (previousPageData && !previousPageData.nextCursor) return null
     const params = new URLSearchParams({ limit: '10' })
+    if (selectedCategory && selectedCategory !== 'all') {
+      params.set('category', selectedCategory)
+    }
     if (pageIndex > 0 && previousPageData?.nextCursor) {
       params.set('cursor', previousPageData.nextCursor)
     }
     return `/api/feed/posts?${params.toString()}`
-  }, [userId])
+  }, [userId, selectedCategory])
 
   const {
     data: feedPages,
@@ -521,6 +548,25 @@ export function EnhancedSocialFeed() {
     }
   }, [mutateFeed])
 
+  const handleUpdatePost = useCallback(async (postId: string, content: string) => {
+    if (!content.trim()) return
+    patchFeed((post) => (post.id === postId ? { ...post, content: content.trim() } : post))
+    try {
+      const response = await fetch(`/api/feed/posts/${postId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content.trim() }),
+      })
+      if (!response.ok) throw new Error('Failed to update')
+      toast.success('Post updated')
+      setEditTargetPost(null)
+      mutateFeed()
+    } catch {
+      toast.error('Failed to update post')
+      mutateFeed()
+    }
+  }, [mutateFeed, patchFeed])
+
   const handleDeletePost = useCallback(async (postId: string) => {
     mutateFeed((pages) => pages?.map((page) => ({ ...page, data: page.data.filter((post) => post.id !== postId) })), false)
     try {
@@ -604,6 +650,20 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
+        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+          {['all', 'general', 'announcement', 'event', 'discussion'].map((cat) => (
+            <Button
+              key={cat}
+              variant={selectedCategory === cat ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-full capitalize whitespace-nowrap"
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat === 'all' ? 'All Feed' : cat}
+            </Button>
+          ))}
+        </div>
+
         <div className="space-y-4 relative">
           {feedValidating && (
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-1 overflow-hidden rounded-full">
@@ -629,6 +689,7 @@ export function EnhancedSocialFeed() {
                 onLike={() => handleLike(post.id, userLikes.has(post.id))}
                 onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
                 onDelete={() => handleDeletePost(post.id)}
+                onEdit={() => setEditTargetPost(post)}
                 onComment={handleCommentCreate}
                   onOpenShare={() => {
                     setShareTargetPost(post)
@@ -664,6 +725,35 @@ export function EnhancedSocialFeed() {
             </TabsContent>
           </Tabs>
         </Card>
+
+        <Card className="mt-6 glass-card overflow-hidden border-none shadow-md">
+          <CardHeader className="pb-2">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" /> Suggested
+            </h4>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-white/5">
+              {members.slice(0, 4).map((m: any) => (
+                <div key={m.id} className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors group">
+                  <Avatar className="h-8 w-8 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
+                    <AvatarImage src={m.avatar_url} />
+                    <AvatarFallback>{m.full_name?.[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{m.full_name || 'Member'}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{m.profession || m.role || 'Community'}</p>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 hover:bg-primary hover:text-primary-foreground">Follow</Button>
+                </div>
+              ))}
+            </div>
+            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground rounded-none h-9 border-t border-white/5 hover:bg-white/5" onClick={() => setActiveTab('members')}>
+              View all members
+            </Button>
+          </CardContent>
+        </Card>
+
       </aside>
 
       <Dialog open={!!shareTargetPost} onOpenChange={(open) => !open && setShareTargetPost(null)}>
@@ -684,6 +774,24 @@ export function EnhancedSocialFeed() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!editTargetPost} onOpenChange={(open) => !open && setEditTargetPost(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Post</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={editTargetPost?.content || ''}
+              onChange={(e) => editTargetPost && setEditTargetPost({ ...editTargetPost, content: e.target.value })}
+              className="min-h-[120px]"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditTargetPost(null)}>Cancel</Button>
+              <Button onClick={() => editTargetPost && handleUpdatePost(editTargetPost.id, editTargetPost.content)}>Save Changes</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }
@@ -696,6 +804,7 @@ function PostCard({
   onLike,
   onBookmark,
   onDelete,
+  onEdit,
   onComment,
   onOpenShare,
 }: {
@@ -706,6 +815,7 @@ function PostCard({
   onLike: () => void
   onBookmark: () => void
   onDelete: () => void
+  onEdit: () => void
   onComment: (postId: string, content: string) => Promise<void>
   onOpenShare: () => void
 }) {
@@ -756,14 +866,19 @@ function PostCard({
               <p className="text-xs text-muted-foreground truncate">{post.profiles?.profession || post.profiles?.role || 'Community member'} · {post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
             </div>
           </div>
-          {isOwner && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {isOwner && (
+              <>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={onEdit}><ImageIcon className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+              </>
+            )}
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-3">
-        <p className="whitespace-pre-wrap leading-relaxed">{post.content}</p>
+        <FormattedContent content={post.content} />
 
         {post.metadata?.shared_post_id && (
           <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm">
