@@ -39,8 +39,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const filteredComments = (comments ?? []).filter((comment: any) => !hiddenUsers.has(comment.author_id))
 
     return NextResponse.json({ comments: filteredComments })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (err: any) {
+    require('fs').appendFileSync('d:/Final/New folder/final/error.log', 'GET error: ' + err?.message + '\n' + err?.stack + '\n');
+    return NextResponse.json({ error: 'Internal server error', details: err?.message }, { status: 500 })
   }
 }
 
@@ -83,27 +84,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 
-    const { data: comment, error } = await supabase
+    const insertData: any = {
+      post_id: postId,
+      author_id: userId,
+      content: content.trim(),
+    }
+
+    // Only add parent_comment_id if it was provided, to be safe against schema mismatches
+    if (parent_comment_id) {
+       insertData.parent_comment_id = parent_comment_id
+    }
+
+    const { data: comment, error: insertError } = await supabase
       .from('comments')
-      .insert({
-        post_id: postId,
-        author_id: userId,
-        content: content.trim(),
-        parent_comment_id: parent_comment_id || null,
-      })
+      .insert(insertData)
       .select(`
         *,
         author:profiles!author_id(id, full_name, avatar_url, role)
       `)
       .single()
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (insertError) {
+      console.error('Comment Insert Error:', insertError)
+      return NextResponse.json({ 
+        error: 'Database error while posting comment', 
+        message: insertError.message,
+        details: insertError.details,
+        code: insertError.code
+      }, { status: 500 })
     }
 
     // Increment post comments_count explicitly
-    const { data: p } = await supabase.from('posts').select('comments_count').eq('id', postId).single()
-    if (p) await supabase.from('posts').update({ comments_count: (p.comments_count || 0) + 1 }).eq('id', postId)
+    try {
+      const { data: p } = await supabase.from('posts').select('comments_count').eq('id', postId).single()
+      if (p) await supabase.from('posts').update({ comments_count: (p.comments_count || 0) + 1 }).eq('id', postId)
+    } catch (countErr) {
+      console.warn('Failed to increment comments_count, continuing anyway:', countErr)
+    }
 
     const idempotencyKey = await resolveIdempotencyKey(request, `comment-create:${userId}:${postId}:${comment.id}`)
     await publishRealtimeEvent({
@@ -140,7 +157,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
 
     return NextResponse.json({ comment, actor_user_id: userId }, { status: 201 })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (err: any) {
+    console.error('Route error:', err)
+    return NextResponse.json({ 
+      error: 'Internal server error during comment creation', 
+      message: err?.message,
+      stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined
+    }, { status: 500 })
   }
 }

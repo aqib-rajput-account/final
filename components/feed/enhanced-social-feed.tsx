@@ -472,9 +472,9 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
   const [newComment, setNewComment] = useState('')
   const [postingComment, setPostingComment] = useState(false)
 
-  const { data: commentsData, mutate: mutateComments } = useSWR(showComments ? `/api/posts/${post.id}/comments` : null, fetcher)
+  const { data: commentsData, error: commentsError, mutate: mutateComments } = useSWR(showComments ? `/api/posts/${post.id}/comments` : null, fetcher)
   const comments = (commentsData as any)?.comments || []
-  const loadingComments = showComments && !commentsData
+  const loadingComments = showComments && !commentsData && !commentsError
 
   const handlePostComment = async () => {
     if (!newComment.trim() || postingComment) return
@@ -485,12 +485,16 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: newComment.trim() })
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error('Comment error body:', body);
+        throw new Error(body.message || body.error || 'Failed to post comment')
+      }
       mutateComments()
       setNewComment('')
       post.comments_count = (post.comments_count || 0) + 1
-    } catch {
-      toast.error('Failed to post comment')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to post comment')
     } finally {
       setPostingComment(false)
     }
@@ -634,6 +638,8 @@ function PostCard({ post, isOwner, isLiked, isBookmarked, onLike, onBookmark, on
           <div className="mt-4 space-y-3">
              {loadingComments ? (
                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+             ) : commentsError ? (
+               <div className="text-center text-sm text-red-500 py-2">Failed to load comments.</div>
              ) : comments.length === 0 ? (
                <div className="text-center text-sm text-muted-foreground py-2">No comments yet.</div>
              ) : (
