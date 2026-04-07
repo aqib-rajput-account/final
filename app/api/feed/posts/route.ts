@@ -79,8 +79,8 @@ export async function GET(request: Request) {
         updated_at,
         author_id,
         mosque_id,
-        like_count,
-        comment_count,
+        likes_count,
+        comments_count,
         profiles:author_id(
           id,
           full_name,
@@ -118,12 +118,11 @@ export async function GET(request: Request) {
       posts
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
         .map((post: any) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { like_count, comment_count, ...rest } = post
+          const { likes_count, comments_count, ...rest } = post
           return {
             ...rest,
-            likes_count: like_count || 0, // Map DB 'like_count' → API 'likes_count'
-            comments_count: comment_count || 0, // Map DB 'comment_count' → API 'comments_count'
+            likes_count: likes_count || 0,
+            comments_count: comments_count || 0,
             visibility: rest.visibility === 'followers' || rest.visibility === 'private' ? rest.visibility : 'public', // Sanitize visibility
           }
         }) || []
@@ -279,8 +278,8 @@ export async function POST(request: Request) {
         mosque_id: mosque_id ?? null,
         is_published: true, // Always publish on creation (Requirement 1.2)
         visibility: safeVisibility,
-        like_count: 0,
-        comment_count: 0,
+        likes_count: 0,
+        comments_count: 0,
       })
       .select('*')
       .single()
