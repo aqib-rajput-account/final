@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       .select(
         `
         id,
-        content,
+        body,
         image_url,
         post_type,
         category,
@@ -85,10 +85,9 @@ export async function GET(request: Request) {
           profession,
           role
         ),
-        post_likes(count),
-        post_comments(count)
-      `,
-        { count: 'exact' }
+        like_count,
+        comment_count
+      `
       )
       .eq('is_published', true)
       .in('visibility', ['public', 'followers'])
@@ -118,8 +117,9 @@ export async function GET(request: Request) {
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
         .map((post: any) => ({
           ...post,
-          likes_count: post.post_likes?.[0]?.count || 0,
-          comments_count: post.post_comments?.[0]?.count || 0,
+          content: post.body,
+          likes_count: post.like_count || 0,
+          comments_count: post.comment_count || 0,
         })) || []
 
     const postIds = formattedPosts.map((p: any) => p.id)
@@ -128,10 +128,11 @@ export async function GET(request: Request) {
 
     if (postIds.length > 0) {
       const { data: likes } = await supabase
-        .from('post_likes')
+        .from('reactions')
         .select('post_id')
         .in('post_id', postIds)
         .eq('user_id', userId)
+        .eq('reaction_type', 'like')
 
       userLikes = likes?.map((l) => l.post_id) || []
 
@@ -259,7 +260,7 @@ export async function POST(request: Request) {
       .from('posts')
       .insert({
         author_id: userId,
-        content: String(content).trim(),
+        body: String(content).trim(),
         image_url: image_url ?? null,
         post_type: post_type ?? 'text',
         category: category ?? 'general',
