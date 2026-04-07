@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createSupabaseAdmin } from '@/lib/supabase/admin'
 import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
@@ -8,7 +9,7 @@ import { canUsersInteract, enforceMultiScopeThrottle } from '@/backend/safety/se
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: postId } = await params
-    const supabase = await createClient()
+    const supabase = createSupabaseAdmin()
     const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: postId } = await params
-    const supabase = await createClient()
+    const supabase = createSupabaseAdmin()
     const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
