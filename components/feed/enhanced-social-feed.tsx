@@ -275,15 +275,18 @@ export function EnhancedSocialFeed() {
     
     try {
       const res = await fetch('/api/feed/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: newPostContent.trim(), image_url: newPostImage, post_type: newPostType, category: newPostCategory }) })
-      const { post } = await res.json()
-      mutateFeed(pages => pages?.map(p => ({ ...p, data: p.data.map(px => px.id === tempId ? { ...post, content: post.body, likes_count: post.like_count||0, comments_count: post.comment_count||0 } : px) })), false)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Failed to post')
+      const { post } = body
+      mutateFeed(pages => pages?.map(p => ({ ...p, data: p.data.map(px => px.id === tempId ? { ...post, content: post.body || post.content, likes_count: post.like_count||0, comments_count: post.comment_count||0 } : px) })), false)
       setNewPostContent('')
       setNewPostImage(null)
       setIsComposeExpanded(false)
       toast.success('Post created!')
-    } catch {
+    } catch (err: any) {
+      console.error('Post creation error:', err)
       mutateFeed()
-      toast.error('Failed to post')
+      toast.error(err.message || 'Failed to post')
     } finally { setIsPosting(false) }
   }
 

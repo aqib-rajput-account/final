@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createSupabaseAdmin } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
@@ -218,7 +219,7 @@ export async function POST(request: Request) {
   const startedAt = Date.now()
   const traceId = getTraceIdFromRequest(request)
   try {
-    const supabase = await createClient()
+    const supabase = createSupabaseAdmin()
     const { userId } = await auth()
 
     if (!userId) {
