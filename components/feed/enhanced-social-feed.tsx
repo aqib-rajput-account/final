@@ -114,22 +114,35 @@ function PostSkeleton() {
 
 function FormattedContent({ content }: { content: string }) {
   if (!content) return null
-  const parts = content.split(/(@[^\s.,!?;:]+)/g)
+  // Regex to match @mentions and #hashtags
+  const parts = content.split(/(@[^\s.,!?;:]+|#[^\s.,!?;:]+)/g)
   return (
     <p className="whitespace-pre-wrap leading-relaxed text-sm sm:text-base">
-      {parts.map((part, i) =>
-        part.startsWith('@') ? (
-          <Link
-            key={i}
-            href={`/search?q=${encodeURIComponent(part.slice(1))}`}
-            className="text-primary hover:underline font-semibold bg-primary/5 px-1 rounded-sm"
-          >
-            {part}
-          </Link>
-        ) : (
-          part
-        )
-      )}
+      {parts.map((part, i) => {
+        if (part.startsWith('@')) {
+          return (
+            <Link
+              key={i}
+              href={`/search?q=${encodeURIComponent(part.slice(1))}`}
+              className="text-primary hover:underline font-semibold bg-primary/5 px-1 rounded-sm"
+            >
+              {part}
+            </Link>
+          )
+        }
+        if (part.startsWith('#')) {
+          return (
+            <Link
+              key={i}
+              href={`/search?q=${encodeURIComponent(part)}`}
+              className="text-primary/80 hover:underline font-medium hover:text-primary transition-colors"
+            >
+              {part}
+            </Link>
+          )
+        }
+        return part
+      })}
     </p>
   )
 }
@@ -172,6 +185,7 @@ export function EnhancedSocialFeed() {
   const [editTargetPost, setEditTargetPost] = useState<FeedPost | null>(null)
   const [shareNote, setShareNote] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [feedSearch, setFeedSearch] = useState('')
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
 
@@ -207,7 +221,23 @@ export function EnhancedSocialFeed() {
   const { data: onlineUsersData, mutate: mutateOnlineUsers } = useSWR(userId ? '/api/users/online' : null, fetcher)
   const { data: membersData, mutate: mutateMembers } = useSWR(userId ? '/api/users/community' : null, fetcher)
 
-  const posts = useMemo(() => feedPages?.flatMap((page) => page.data) ?? [], [feedPages])
+  const posts = useMemo(() => {
+    const rawPosts = (feedPages?.flatMap((page) => page.data) ?? []) as FeedPost[]
+    // 1. Deduplicate
+    const uniquePosts = Array.from(new Map(rawPosts.map((p) => [p.id, p])).values())
+    // 2. Filter by search
+    const filteredBySearch = feedSearch 
+      ? uniquePosts.filter(p => p.content?.toLowerCase().includes(feedSearch.toLowerCase()) || (p as any).body?.toLowerCase().includes(feedSearch.toLowerCase()))
+      : uniquePosts
+    // 3. Sort logic: Pinned first, then by date
+    return filteredBySearch.sort((a, b) => {
+      const aPinned = (a as any).pinned_at || a.metadata?.pinned_at
+      const bPinned = (b as any).pinned_at || b.metadata?.pinned_at
+      if (aPinned && !bPinned) return -1
+      if (!aPinned && bPinned) return 1
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+  }, [feedPages, feedSearch])
   const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
   const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
@@ -650,18 +680,43 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {['all', 'general', 'announcement', 'event', 'discussion'].map((cat) => (
-            <Button
-              key={cat}
-              variant={selectedCategory === cat ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-full capitalize whitespace-nowrap"
-              onClick={() => setSelectedCategory(cat)}
-            >
-              {cat === 'all' ? 'All Feed' : cat}
-            </Button>
-          ))}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white/5 p-1.5 rounded-xl border border-white/5 shadow-inner">
+            <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+              {['all', 'general', 'announcement', 'event', 'discussion'].map((cat) => (
+                <Button
+                  key={cat}
+                  variant={selectedCategory === cat ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    'h-8 rounded-lg text-xs font-medium transition-all duration-300 px-3 shrink-0 capitalize',
+                    selectedCategory === cat ? 'shadow-md scale-105' : 'text-muted-foreground hover:bg-white/10'
+                  )}
+                  onClick={() => setSelectedCategory(cat)}
+                >
+                  {cat === 'all' ? 'All Feed' : cat}
+                </Button>
+              ))}
+            </div>
+            
+            <div className="relative w-full sm:w-64 group">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+              <Input 
+                placeholder="Search community..." 
+                value={feedSearch}
+                onChange={(e) => setFeedSearch(e.target.value)}
+                className="h-8 pl-9 text-xs bg-muted/50 border-white/5 focus-visible:ring-primary/20 transition-all rounded-lg"
+              />
+              {feedSearch && (
+                <button 
+                  onClick={() => setFeedSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted"
+                >
+                  <X className="h-3 w-3 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4 relative">
@@ -862,8 +917,24 @@ function PostCard({
               </Avatar>
             </Link>
             <div className="min-w-0">
-              <Link href={`/profile/${post.author_id}`} className="font-semibold hover:underline truncate block">{post.profiles?.full_name || 'Anonymous'}</Link>
-              <p className="text-xs text-muted-foreground truncate">{post.profiles?.profession || post.profiles?.role || 'Community member'} · {post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</p>
+              <Link href={`/profile/${post.author_id}`} className="font-semibold hover:underline truncate block">
+                {post.profiles?.full_name || 'Anonymous'}
+                {(post.profiles?.role === 'admin' || post.profiles?.role === 'staff') && (
+                  <Badge variant="secondary" className="ml-2 h-4 text-[9px] uppercase tracking-wider bg-primary/10 text-primary border-primary/20">
+                    Staff
+                  </Badge>
+                )}
+              </Link>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                {post.metadata?.pinned_at && (
+                  <Badge variant="ghost" className="h-4 p-0 px-1 text-[10px] bg-amber-500/10 text-amber-500 font-bold border-none">
+                    Pinned
+                  </Badge>
+                )}
+                <span>{post.profiles?.profession || post.profiles?.role || 'Member'}</span>
+                <span>·</span>
+                <span>{post.created_at && formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -888,9 +959,30 @@ function PostCard({
           </div>
         )}
 
-        {post.image_url && (
-          <div className="w-full aspect-video rounded-lg overflow-hidden">
+        {post.image_url && !((post as any).media_urls?.length) && (
+          <div className="w-full aspect-video rounded-lg overflow-hidden border">
             <img src={post.image_url} alt="Post image" className="h-full w-full object-cover" />
+          </div>
+        )}
+
+        {(post as any).media_urls?.length > 0 && (
+          <div className={cn(
+            "grid gap-2 rounded-lg overflow-hidden border bg-muted/20",
+            (post as any).media_urls.length === 1 ? "grid-cols-1" : "grid-cols-2"
+          )}>
+            {(post as any).media_urls.slice(0, 4).map((url: string, i: number) => (
+              <div key={i} className={cn(
+                "relative aspect-square",
+                (post as any).media_urls.length === 3 && i === 0 ? "row-span-2 aspect-auto" : ""
+              )}>
+                <img src={url} alt={`Post media ${i}`} className="h-full w-full object-cover" />
+                {(post as any).media_urls.length > 4 && i === 3 && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold text-lg">
+                    +{(post as any).media_urls.length - 4}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
