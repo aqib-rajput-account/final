@@ -60,6 +60,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: likeError.message }, { status: 500 })
     }
 
+    // Increment post likes_count explicitly
+    const { data: pUpdate } = await supabase.from('posts').select('likes_count').eq('id', postId).single()
+    if (pUpdate) await supabase.from('posts').update({ likes_count: (pUpdate.likes_count || 0) + 1 }).eq('id', postId)
+
     const idempotencyKey = await resolveIdempotencyKey(request, `post-like:${userId}:${postId}`)
     await publishRealtimeEvent({
       eventType: 'post.liked',
@@ -118,6 +122,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Decrement post likes_count explicitly
+    const { data: pUpdate } = await supabase.from('posts').select('likes_count').eq('id', postId).single()
+    if (pUpdate) await supabase.from('posts').update({ likes_count: Math.max(0, (pUpdate.likes_count || 0) - 1) }).eq('id', postId)
 
     const idempotencyKey = await resolveIdempotencyKey(request, `post-unlike:${userId}:${postId}`)
     await publishRealtimeEvent({

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const comments = rawComments?.map((c: any) => ({
       ...c,
-      content: c.body, // Map DB 'body' to API 'content' for frontend compatibility
+      content: c.content, // Map DB content directly
     }))
 
     if (!userId) {
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .insert({
         post_id: postId,
         author_id: userId,
-        body: content.trim(),
+        content: content.trim(),
         parent_comment_id: parent_comment_id || null,
       })
       .select(`
@@ -100,6 +100,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Increment post comments_count explicitly
+    const { data: p } = await supabase.from('posts').select('comments_count').eq('id', postId).single()
+    if (p) await supabase.from('posts').update({ comments_count: (p.comments_count || 0) + 1 }).eq('id', postId)
 
     const idempotencyKey = await resolveIdempotencyKey(request, `comment-create:${userId}:${postId}:${comment.id}`)
     await publishRealtimeEvent({
