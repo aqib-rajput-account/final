@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       .select(
         `
         id,
-        body,
+        content,
         image_url,
         post_type,
         category,
@@ -119,10 +119,9 @@ export async function GET(request: Request) {
         ?.filter((post: any) => !hiddenUsers.has(post.author_id))
         .map((post: any) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { body, like_count, comment_count, ...rest } = post
+          const { like_count, comment_count, ...rest } = post
           return {
             ...rest,
-            content: body, // Map DB 'body' → API 'content'
             likes_count: like_count || 0, // Map DB 'like_count' → API 'likes_count'
             comments_count: comment_count || 0, // Map DB 'comment_count' → API 'comments_count'
             visibility: rest.visibility === 'followers' || rest.visibility === 'private' ? rest.visibility : 'public', // Sanitize visibility
@@ -272,7 +271,7 @@ export async function POST(request: Request) {
       .from('posts')
       .insert({
         author_id: userId,
-        body: String(content).trim(), // Map frontend 'content' to DB 'body'
+        content: String(content).trim(),
         image_url: image_url ?? null,
         post_type: post_type ?? 'text',
         category: category ?? 'general',
