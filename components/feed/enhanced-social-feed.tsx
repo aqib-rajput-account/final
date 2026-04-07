@@ -70,6 +70,14 @@ interface FeedPage {
   nextCursor: string | null
 }
 
+interface UserProfile {
+  id: string
+  full_name: string | null
+  avatar_url: string | null
+  profession?: string | null
+  role?: string | null
+}
+
 interface PostComment {
   id: string
   content: string
@@ -92,9 +100,34 @@ const fetcher = async <T,>(url: string): Promise<T> => {
   return res.json()
 }
 
+// PREMIUM ANIMATIONS SYSTEM
+const ANIMATIONS_CSS = `
+@keyframes postIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes heartPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+@keyframes shimmerGlint {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+.animate-in-post { animation: postIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.heart-pulse { animation: heartPulse 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.glass-glint { position: relative; overflow: hidden; }
+.glass-glint::after {
+  content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  animation: shimmerGlint 3s infinite;
+}
+`
+
 function PostSkeleton() {
   return (
-    <Card className="glass-card">
+    <Card className="glass-card opacity-60">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 rounded-full" />
@@ -104,9 +137,12 @@ function PostSkeleton() {
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <Skeleton className="h-4 w-full mb-2" />
-        <Skeleton className="h-4 w-3/4" />
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+        </div>
+        <Skeleton className="w-full aspect-video rounded-lg" />
       </CardContent>
     </Card>
   )
@@ -222,15 +258,18 @@ export function EnhancedSocialFeed() {
   const { data: membersData, mutate: mutateMembers } = useSWR(userId ? '/api/users/community' : null, fetcher)
 
   const posts = useMemo(() => {
-    const rawPosts = (feedPages?.flatMap((page) => page.data) ?? []) as FeedPost[]
+    const rawPosts = (feedPages?.flatMap((page: FeedPage) => page.data) ?? []) as FeedPost[]
     // 1. Deduplicate
-    const uniquePosts = Array.from(new Map(rawPosts.map((p) => [p.id, p])).values())
+    const uniquePosts = Array.from(new Map(rawPosts.map((p: FeedPost) => [p.id, p])).values())
     // 2. Filter by search
     const filteredBySearch = feedSearch 
-      ? uniquePosts.filter(p => p.content?.toLowerCase().includes(feedSearch.toLowerCase()) || (p as any).body?.toLowerCase().includes(feedSearch.toLowerCase()))
+      ? uniquePosts.filter((p: FeedPost) => 
+          p.content?.toLowerCase().includes(feedSearch.toLowerCase()) || 
+          (p as any).body?.toLowerCase().includes(feedSearch.toLowerCase())
+        )
       : uniquePosts
     // 3. Sort logic: Pinned first, then by date
-    return filteredBySearch.sort((a, b) => {
+    return filteredBySearch.sort((a: FeedPost, b: FeedPost) => {
       const aPinned = (a as any).pinned_at || a.metadata?.pinned_at
       const bPinned = (b as any).pinned_at || b.metadata?.pinned_at
       if (aPinned && !bPinned) return -1
@@ -275,9 +314,9 @@ export function EnhancedSocialFeed() {
   }, [members, onlineUsers, profile, realtimeOnlineIds, resolvedRole, userId])
 
   const patchFeed = useCallback((fn: (post: FeedPost) => FeedPost) => {
-    mutateFeed((pages) => {
+    mutateFeed((pages: FeedPage[] | undefined) => {
       if (!pages) return pages
-      return pages.map((page) => ({ ...page, data: page.data.map(fn) }))
+      return pages.map((page: FeedPage) => ({ ...page, data: page.data.map(fn) }))
     }, false)
   }, [mutateFeed])
 
@@ -291,14 +330,14 @@ export function EnhancedSocialFeed() {
     if (event.eventType === 'post.liked' || event.eventType === 'post.unliked') {
       const postId = String(event.payload.postId ?? event.entityId)
       const direction = event.eventType === 'post.liked' ? 1 : -1
-      patchFeed((post) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + direction) } : post))
+      patchFeed((post: FeedPost) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + direction) } : post))
       return
     }
 
     if (event.eventType === 'comment.created') {
       const postId = String(event.payload.postId ?? '')
       if (!postId) return
-      patchFeed((post) => (post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post))
+      patchFeed((post: FeedPost) => (post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post))
       return
     }
 
@@ -453,9 +492,9 @@ export function EnhancedSocialFeed() {
       },
     }
 
-    mutateFeed((pages) => {
+    mutateFeed((pages: FeedPage[] | undefined) => {
       if (!pages || pages.length === 0) {
-        return [{ data: [optimisticPost], userLikes: [], userBookmarks: [], nextCursor: null }]
+        return [{ data: [optimisticPost], userLikes: [], userBookmarks: [], nextCursor: null }] as FeedPage[]
       }
       return [{ ...pages[0], data: [optimisticPost, ...pages[0].data] }, ...pages.slice(1)]
     }, false)
@@ -518,7 +557,7 @@ export function EnhancedSocialFeed() {
     })
 
     patchFeed((post) => (post.id === postId ? { ...post, likes_count: Math.max(0, post.likes_count + (isLiked ? -1 : 1)) } : post))
-    mutateFeed((pages) => pages?.map((page) => ({
+    mutateFeed((pages: FeedPage[] | undefined) => pages?.map((page: FeedPage) => ({
       ...page,
       userLikes: isLiked ? page.userLikes.filter((id) => id !== postId) : Array.from(new Set([...page.userLikes, postId])),
     })), false)
@@ -560,7 +599,7 @@ export function EnhancedSocialFeed() {
   }, [mutateFeed, patchFeed])
 
   const handleBookmark = useCallback(async (postId: string, isBookmarked: boolean) => {
-    mutateFeed((pages) => pages?.map((page) => ({
+    mutateFeed((pages: FeedPage[] | undefined) => pages?.map((page: FeedPage) => ({
       ...page,
       userBookmarks: isBookmarked ? page.userBookmarks.filter((id) => id !== postId) : Array.from(new Set([...page.userBookmarks, postId])),
     })), false)
@@ -598,7 +637,7 @@ export function EnhancedSocialFeed() {
   }, [mutateFeed, patchFeed])
 
   const handleDeletePost = useCallback(async (postId: string) => {
-    mutateFeed((pages) => pages?.map((page) => ({ ...page, data: page.data.filter((post) => post.id !== postId) })), false)
+    mutateFeed((pages: FeedPage[] | undefined) => pages?.map((page: FeedPage) => ({ ...page, data: page.data.filter((post: FeedPost) => post.id !== postId) })), false)
     try {
       const response = await fetch(`/api/feed/posts/${postId}`, { method: 'DELETE' })
       const payload = await response.json()
@@ -624,8 +663,22 @@ export function EnhancedSocialFeed() {
     )
   }
 
+  const handleShare = async (p: FeedPost) => {
+    try {
+      const url = `${window.location.origin}/posts/${p.id}`
+      await navigator.clipboard.writeText(url)
+      toast.success('Link copied to clipboard!', {
+        description: 'You can now share this post with your community.',
+        icon: <Share2 className="h-4 w-4" />,
+      })
+    } catch (err) {
+      toast.error('Failed to copy link')
+    }
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+      <style dangerouslySetInnerHTML={{ __html: ANIMATIONS_CSS }} />
       <aside className="hidden lg:block lg:col-span-3">
         <Card className="sticky top-20 glass-card">
           <CardContent className="p-6">
@@ -734,23 +787,24 @@ export function EnhancedSocialFeed() {
           ) : posts.length === 0 ? (
             <Card><CardContent className="p-8 text-center"><MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><h3 className="font-semibold mb-2">No posts yet</h3><p className="text-muted-foreground">Be the first to share something with the community!</p></CardContent></Card>
           ) : (
-            posts.map((post, idx) => (
+            posts.map((post: FeedPost, idx: number) => (
               <div key={post.id} className={cn(idx === 0 && !feedLoading ? 'animate-in-post' : '')}>
                 <PostCard
                   post={post}
-                isOwner={post.author_id === userId}
-                isLiked={userLikes.has(post.id)}
-                isBookmarked={userBookmarks.has(post.id)}
-                onLike={() => handleLike(post.id, userLikes.has(post.id))}
-                onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
-                onDelete={() => handleDeletePost(post.id)}
-                onEdit={() => setEditTargetPost(post)}
-                onComment={handleCommentCreate}
+                  isOwner={post.author_id === userId}
+                  isLiked={userLikes.has(post.id)}
+                  isBookmarked={userBookmarks.has(post.id)}
+                  onLike={() => handleLike(post.id, userLikes.has(post.id))}
+                  onBookmark={() => handleBookmark(post.id, userBookmarks.has(post.id))}
+                  onDelete={() => handleDeletePost(post.id)}
+                  onEdit={() => setEditTargetPost(post)}
+                  onComment={handleCommentCreate}
                   onOpenShare={() => {
                     setShareTargetPost(post)
                     setShareNote(`Sharing @${post.profiles?.full_name || 'community'}: `)
                     setNewPostContent('')
                   }}
+                  onCopyLink={() => handleShare(post)}
                 />
               </div>
             ))
@@ -770,13 +824,42 @@ export function EnhancedSocialFeed() {
         <Card className="sticky top-20 glass-card">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'online' | 'members')}>
             <TabsList className="w-full grid grid-cols-2">
-              <TabsTrigger value="online" className="text-xs"><UserCheck className="h-3 w-3 mr-1" />Online ({mergedOnlineUsers.length})</TabsTrigger>
-              <TabsTrigger value="members" className="text-xs"><Users className="h-3 w-3 mr-1" />Members ({members.length})</TabsTrigger>
+              <TabsTrigger value="online" className="text-xs transition-all data-[state=active]:bg-primary/20"><UserCheck className="h-3 w-3 mr-1" />Online ({mergedOnlineUsers.length})</TabsTrigger>
+              <TabsTrigger value="members" className="text-xs transition-all data-[state=active]:bg-primary/20"><Users className="h-3 w-3 mr-1" />Members ({members.length})</TabsTrigger>
             </TabsList>
-            <TabsContent value="online" className="mt-0"><ScrollArea className="h-[400px]"><div className="p-2">{mergedOnlineUsers.length === 0 ? <p className="text-center text-sm text-muted-foreground py-8">No users online</p> : mergedOnlineUsers.map((member: any) => <UserCard key={member.id} user={member} isOnline />)}</div></ScrollArea></TabsContent>
-            <TabsContent value="members" className="mt-0">
-              <div className="p-2"><div className="relative mb-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search members..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9" /></div></div>
-              <ScrollArea className="h-[340px]"><div className="p-2 pt-0">{filteredMembers.length === 0 ? <p className="text-center text-sm text-muted-foreground py-8">No members found</p> : filteredMembers.map((member: any) => <UserCard key={member.id} user={member} isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)} />)}</div></ScrollArea>
+            <TabsContent value="online" className="mt-0 animate-in fade-in duration-300">
+              <ScrollArea className="h-[400px]">
+                <div className="p-2">
+                  {mergedOnlineUsers.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-8">No users online</p>
+                  ) : (
+                    mergedOnlineUsers.map((member: any) => <UserCard key={member.id} user={member} isOnline />)
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+            <TabsContent value="members" className="mt-0 animate-in fade-in duration-300">
+              <div className="p-2">
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search members..." value={searchQuery} onChange={(e: any) => setSearchQuery(e.target.value)} className="pl-9 h-9 glass-input" />
+                </div>
+              </div>
+              <ScrollArea className="h-[340px]">
+                <div className="p-2 pt-0">
+                  {filteredMembers.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-8">No members found</p>
+                  ) : (
+                    filteredMembers.map((member: any) => (
+                      <UserCard 
+                        key={member.id} 
+                        user={member} 
+                        isOnline={realtimeOnlineIds.has(member.id) || onlineUsers.some((u: any) => u.id === member.id)} 
+                      />
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
             </TabsContent>
           </Tabs>
         </Card>
@@ -806,6 +889,31 @@ export function EnhancedSocialFeed() {
             <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground rounded-none h-9 border-t border-white/5 hover:bg-white/5" onClick={() => setActiveTab('members')}>
               View all members
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6 glass-card border-none shadow-md">
+          <CardHeader className="pb-3 border-b border-white/5">
+            <h4 className="text-sm font-semibold">Trending Topics</h4>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-4">
+              {[
+                { tag: '#Ramadan2026', count: '2.4k posts', trend: 'up' },
+                { tag: '#CommunitySpirit', count: '1.8k posts', trend: 'up' },
+                { tag: '#FridayKhutbah', count: '950 posts', trend: 'neutral' },
+              ].map((item) => (
+                <div key={item.tag} className="group flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-all cursor-pointer glass-glint">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-semibold group-hover:text-primary transition-colors">{item.tag}</p>
+                    <p className="text-xs text-muted-foreground">{item.count}</p>
+                  </div>
+                  {item.trend === 'up' && (
+                    <Badge variant="outline" className="h-5 text-[10px] bg-green-500/10 text-green-500 border-none">Hot</Badge>
+                  )}
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
@@ -862,6 +970,7 @@ function PostCard({
   onEdit,
   onComment,
   onOpenShare,
+  onCopyLink,
 }: {
   post: FeedPost
   isOwner: boolean
@@ -873,6 +982,7 @@ function PostCard({
   onEdit: () => void
   onComment: (postId: string, content: string) => Promise<void>
   onOpenShare: () => void
+  onCopyLink: () => void
 }) {
   const [showComments, setShowComments] = useState(false)
   const [commentInput, setCommentInput] = useState('')
@@ -992,10 +1102,31 @@ function PostCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="ghost" size="sm" className={cn('gap-2', isLiked && 'text-red-500')} onClick={onLike}><Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />Like</Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowComments((v) => !v)}><MessageCircle className="h-4 w-4" />Comment</Button>
-          <Button variant="ghost" size="sm" className="gap-2" onClick={onOpenShare}><Share2 className="h-4 w-4" />Share</Button>
-          <Button variant="ghost" size="sm" className={cn('gap-2', isBookmarked && 'text-primary')} onClick={onBookmark}><AtSign className="h-4 w-4" />Mention</Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className={cn('gap-2 transition-all active:scale-95 px-3', isLiked && 'text-red-500 bg-red-500/5 hover:bg-red-500/10')} 
+            onClick={onLike}
+          >
+            <Heart className={cn('h-4 w-4 transition-transform', isLiked && 'fill-current heart-pulse')} />
+            Like
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2 active:scale-95 px-3" onClick={() => setShowComments((v) => !v)}>
+            <MessageCircle className="h-4 w-4" />
+            Comment
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2 active:scale-95 px-3" onClick={onOpenShare}>
+            <Repeat2 className="h-4 w-4" />
+            Repost
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2 active:scale-95 px-3" onClick={onCopyLink}>
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+          <Button variant="ghost" size="sm" className={cn('gap-2 active:scale-95 px-3', isBookmarked && 'text-primary bg-primary/5')} onClick={onBookmark}>
+            <AtSign className="h-4 w-4" />
+            Bookmark
+          </Button>
         </div>
 
         {showComments && (
