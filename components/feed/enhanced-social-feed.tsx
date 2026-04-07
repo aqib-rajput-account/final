@@ -493,6 +493,7 @@ export function EnhancedSocialFeed() {
   const traceIdRef = useRef<string>(createClientTraceId())
   const observerRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const profileProfession = (profile as { profession?: string | null } | null)?.profession ?? null
 
   const getKey = useCallback((pageIndex: number, previousPageData: FeedPage | null) => {
     if (!userId) return null
@@ -1084,19 +1085,19 @@ export function EnhancedSocialFeed() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[240px_minmax(0,1fr)_300px]">
       <aside className="hidden xl:block">
         <div className="sticky top-20 space-y-4">
           <Card className="border-border/60 shadow-sm">
-            <CardContent className="space-y-5 p-5">
+            <CardContent className="space-y-4 p-5">
               <div className="flex items-center gap-3">
-                <Avatar className="h-14 w-14">
+                <Avatar className="h-12 w-12">
                   <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || 'You'} />
                   <AvatarFallback>{getInitials(profile?.full_name)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="truncate text-base font-semibold">{profile?.full_name || 'You'}</p>
-                  <p className="truncate text-sm text-muted-foreground">@{profile?.username || 'member'}</p>
+                  <p className="truncate text-sm font-semibold">{profile?.full_name || 'You'}</p>
+                  <p className="truncate text-xs text-muted-foreground">@{profile?.username || 'member'}</p>
                 </div>
               </div>
 
@@ -1105,23 +1106,25 @@ export function EnhancedSocialFeed() {
                   <Badge variant="secondary" className="rounded-full">
                     {roleLabel(resolvedRole || profile?.role) || 'Member'}
                   </Badge>
-                  <Badge variant="outline" className="rounded-full">
-                    Real community feed
-                  </Badge>
+                  {profileProfession ? <Badge variant="outline" className="rounded-full">{profileProfession}</Badge> : null}
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  {profile?.bio || 'Your profile stays visible here while the center column keeps the feed focused.'}
+                  {profile?.bio || 'Your profile summary stays here while the main column focuses on the conversation.'}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-3">
-                  <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">My posts</p>
-                  <p className="mt-1 text-2xl font-semibold">{myLoadedPostCount}</p>
+              <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/15 p-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">My posts</span>
+                  <span className="font-semibold">{myLoadedPostCount}</span>
                 </div>
-                <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-3">
-                  <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Members online</p>
-                  <p className="mt-1 text-2xl font-semibold">{onlineMemberCount}</p>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Members online</span>
+                  <span className="font-semibold">{onlineMemberCount}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Visibility</span>
+                  <span className="font-semibold">Community</span>
                 </div>
               </div>
 
@@ -1182,8 +1185,8 @@ export function EnhancedSocialFeed() {
                     <div className="flex items-start gap-2">
                       <VisibilityStatusIcon value={composerVisibility} />
                       <div>
-                      <p className="text-sm font-medium">Who can see this post?</p>
-                      <p className="text-xs text-muted-foreground">{visibilityHint(composerVisibility)}</p>
+                        <p className="text-sm font-medium">Who can see this post?</p>
+                        <p className="text-xs text-muted-foreground">{visibilityHint(composerVisibility)}</p>
                       </div>
                     </div>
                     <Select
@@ -1255,8 +1258,9 @@ export function EnhancedSocialFeed() {
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <Card className="border-border/60 shadow-sm">
+          <CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
             {([
               ['all', 'All'],
               ['general', 'General'],
@@ -1267,7 +1271,7 @@ export function EnhancedSocialFeed() {
                 type="button"
                 variant={activeFeed === feedValue ? 'default' : 'outline'}
                 size="sm"
-                className="rounded-full"
+                className="rounded-full px-4 whitespace-nowrap"
                 onClick={() => {
                   setActiveFeed(feedValue)
                   if (feedValue === 'announcements') setComposerMode('announcement')
@@ -1276,28 +1280,29 @@ export function EnhancedSocialFeed() {
                 {label}
               </Button>
             ))}
-          </div>
+            </div>
 
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="feed-search-input"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search the feed"
-              className="rounded-full pl-9"
-            />
-            {searchInput ? (
-              <button
-                type="button"
-                onClick={() => setSearchInput('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </div>
-        </div>
+            <div className="relative w-full lg:max-w-[280px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="feed-search-input"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Search the feed"
+                className="rounded-full pl-9"
+              />
+              {searchInput ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="space-y-4">
           {feedError ? (
@@ -1421,8 +1426,8 @@ export function EnhancedSocialFeed() {
                 <div className="flex items-start gap-2">
                   <VisibilityStatusIcon value={editVisibility} />
                   <div>
-                  <p className="text-sm font-medium">Post visibility</p>
-                  <p className="text-xs text-muted-foreground">{visibilityHint(editVisibility)}</p>
+                    <p className="text-sm font-medium">Post visibility</p>
+                    <p className="text-xs text-muted-foreground">{visibilityHint(editVisibility)}</p>
                   </div>
                 </div>
                 <Select

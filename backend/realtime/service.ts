@@ -4,6 +4,11 @@ import { REALTIME_EVENT_VERSION } from './types'
 import { getMutedAndBlockedUserIds } from '@/backend/safety/service'
 import { logWithTrace, observeCounter, observeHistogram } from '@/lib/infrastructure/observability'
 
+function isMissingRealtimeChannelsColumnError(error: unknown) {
+  const message = error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String((error as { message?: unknown }).message ?? '') : ''
+  return message.toLowerCase().includes("could not find the 'channels' column of 'realtime_events'") || message.toLowerCase().includes('column "channels"')
+}
+
 export function buildRealtimeChannels(input: { targetUserIds?: string[]; feedStreamId?: string }): string[] {
   const channels = new Set<string>()
 
@@ -47,7 +52,6 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
   input: PublishRealtimeEventInput<TPayload>
 ): Promise<RealtimeEventEnvelope<TPayload>> {
   const startedAt = Date.now()
-  const supabase = await createClient()
   const filteredTargetUserIds = await filterTargetUserIdsForActor(input.actorUserId, input.targetUserIds ?? [])
   const channels = buildRealtimeChannels({
     targetUserIds: [input.actorUserId, ...filteredTargetUserIds],
@@ -55,6 +59,22 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
   })
 
   const version = input.version ?? REALTIME_EVENT_VERSION
+  const traceId =
+    (typeof input.payload?.traceId === 'string' && input.payload.traceId) ||
+    `realtime:${input.idempotencyKey}`
+  const occurredAt = new Date().toISOString()
+  const fallbackEnvelope: RealtimeEventEnvelope<TPayload> = {
+    eventId: Date.now(),
+    version,
+    eventType: input.eventType,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    actorUserId: input.actorUserId,
+    occurredAt,
+    idempotencyKey: input.idempotencyKey,
+    channels,
+    payload: input.payload,
+  }
 
   const insertPayload = {
     event_type: input.eventType,
@@ -67,36 +87,66 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
     channels,
   }
 
-  const { data, error } = await supabase.from('realtime_events').insert(insertPayload).select('*').single()
+  let envelope = fallbackEnvelope
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.from('realtime_events').insert(insertPayload).select('*').single()
 
-  if (error && error.code !== '23505') {
-    throw error
+    if (error && error.code !== '23505') {
+      throw error
+    }
+
+    const persisted =
+      data ?? (await supabase.from('realtime_events').select('*').eq('idempotency_key', input.idempotencyKey).single()).data
+
+    if (!persisted) {
+      throw new Error('Failed to persist realtime event')
+    }
+
+    envelope = {
+      eventId: persisted.event_id,
+      version: persisted.version,
+      eventType: persisted.event_type,
+      entityType: persisted.entity_type,
+      entityId: persisted.entity_id,
+      actorUserId: persisted.actor_user_id,
+      occurredAt: persisted.occurred_at,
+      idempotencyKey: persisted.idempotency_key,
+      channels: persisted.channels ?? channels,
+      payload: (persisted.payload ?? {}) as TPayload,
+    }
+  } catch (error) {
+    if (!isMissingRealtimeChannelsColumnError(error)) {
+      throw error
+    }
+
+    logWithTrace({
+      level: 'warn',
+      traceId,
+      message: 'Realtime event persistence skipped because realtime_events.channels is unavailable',
+      error,
+      tags: {
+        eventType: input.eventType,
+        entityType: input.entityType,
+      },
+    })
   }
 
-  const persisted =
-    data ?? (await supabase.from('realtime_events').select('*').eq('idempotency_key', input.idempotencyKey).single()).data
-
-  if (!persisted) {
-    throw new Error('Failed to persist realtime event')
+  try {
+    await broadcastToChannels(envelope)
+  } catch (error) {
+    logWithTrace({
+      level: 'warn',
+      traceId,
+      message: 'Realtime broadcast failed after event publication',
+      error,
+      tags: {
+        eventType: envelope.eventType,
+        entityType: envelope.entityType,
+      },
+    })
   }
 
-  const envelope: RealtimeEventEnvelope<TPayload> = {
-    eventId: persisted.event_id,
-    version: persisted.version,
-    eventType: persisted.event_type,
-    entityType: persisted.entity_type,
-    entityId: persisted.entity_id,
-    actorUserId: persisted.actor_user_id,
-    occurredAt: persisted.occurred_at,
-    idempotencyKey: persisted.idempotency_key,
-    channels: persisted.channels ?? [],
-    payload: (persisted.payload ?? {}) as TPayload,
-  }
-
-  await broadcastToChannels(envelope)
-  const traceId =
-    (typeof envelope.payload?.traceId === 'string' && envelope.payload.traceId) ||
-    `realtime:${envelope.idempotencyKey}`
   observeCounter('realtime.events.published.total', 1, {
     eventType: envelope.eventType,
     entityType: envelope.entityType,
@@ -150,6 +200,16 @@ export async function listRealtimeEventsSince(input: {
   const { data, error } = await query
 
   if (error) {
+    if (isMissingRealtimeChannelsColumnError(error)) {
+      logWithTrace({
+        level: 'warn',
+        traceId: `realtime:catchup:${input.userId}`,
+        message: 'Realtime catch-up skipped because realtime_events.channels is unavailable',
+        error,
+      })
+      return []
+    }
+
     throw error
   }
 
