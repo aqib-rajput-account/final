@@ -46,8 +46,8 @@ export async function GET(
           profession,
           role
         ),
-        like_count,
-        comment_count
+        likes_count,
+        comments_count
       `
       )
       .eq('id', id)
@@ -60,8 +60,6 @@ export async function GET(
     const formatted = {
       ...post,
       content: (post as any).body,
-      likes_count: (post as any).like_count || 0,
-      comments_count: (post as any).comment_count || 0,
     }
 
     return NextResponse.json({ post: formatted })
@@ -103,7 +101,7 @@ export async function PATCH(
     const body = await request.json()
     const updates: Record<string, unknown> = {}
 
-    if (typeof body.content === 'string') updates.content = body.content.trim()
+    if (typeof body.content === 'string') updates.body = body.content.trim()
     if (typeof body.image_url === 'string' || body.image_url === null) updates.image_url = body.image_url
     if (typeof body.post_type === 'string') updates.post_type = body.post_type
     if (typeof body.category === 'string') updates.category = body.category

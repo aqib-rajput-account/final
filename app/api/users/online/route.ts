@@ -1,17 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
-    
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const userId = await resolveAuthenticatedUserId(request)
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

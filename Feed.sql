@@ -27,10 +27,14 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.profiles (
     id TEXT PRIMARY KEY, -- Clerk User ID
     full_name TEXT,
+    username TEXT,
+    email TEXT,
     avatar_url TEXT,
+    phone TEXT,
     bio TEXT,
     profession TEXT,
     role TEXT DEFAULT 'member',
+    is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -53,9 +57,9 @@ CREATE TABLE IF NOT EXISTS public.posts (
     tags TEXT[] DEFAULT '{}',
     media_urls TEXT[] DEFAULT '{}',
     
-    -- Denormalized counters
-    like_count BIGINT DEFAULT 0,
-    comment_count BIGINT DEFAULT 0,
+    -- Denormalized counters (Unified to plural)
+    likes_count BIGINT DEFAULT 0,
+    comments_count BIGINT DEFAULT 0,
     
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -97,6 +101,15 @@ CREATE TABLE IF NOT EXISTS public.post_comments (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Table for Bookmarks
+CREATE TABLE IF NOT EXISTS public.post_bookmarks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(post_id, user_id)
+);
+
 -- 3. INDEXES FOR PERFORMANCE
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON public.posts(author_id);
 CREATE INDEX IF NOT EXISTS idx_posts_category ON public.posts(category) WHERE is_published = true;
@@ -111,15 +124,15 @@ RETURNS TRIGGER AS $$
 BEGIN
     IF (TG_TABLE_NAME = 'reactions') THEN
         IF (TG_OP = 'INSERT') THEN
-            UPDATE public.posts SET like_count = like_count + 1 WHERE id = NEW.post_id;
+            UPDATE public.posts SET likes_count = likes_count + 1 WHERE id = NEW.post_id;
         ELSIF (TG_OP = 'DELETE') THEN
-            UPDATE public.posts SET like_count = GREATEST(0, like_count - 1) WHERE id = OLD.post_id;
+            UPDATE public.posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = OLD.post_id;
         END IF;
     ELSIF (TG_TABLE_NAME = 'post_comments') THEN
         IF (TG_OP = 'INSERT') THEN
-            UPDATE public.posts SET comment_count = comment_count + 1 WHERE id = NEW.post_id;
+            UPDATE public.posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
         ELSIF (TG_OP = 'DELETE') THEN
-            UPDATE public.posts SET comment_count = GREATEST(0, comment_count - 1) WHERE id = OLD.post_id;
+            UPDATE public.posts SET comments_count = GREATEST(0, comments_count - 1) WHERE id = OLD.post_id;
         END IF;
     END IF;
     RETURN NULL;
@@ -137,7 +150,55 @@ CREATE TRIGGER tr_update_comment_count
 AFTER INSERT OR DELETE ON public.post_comments
 FOR EACH ROW EXECUTE FUNCTION public.update_post_counters();
 
--- 6. ROW LEVEL SECURITY
+-- 6. SAFETY & SOCIAL TABLES
+CREATE TABLE IF NOT EXISTS public.user_blocks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    blocker_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    blocked_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(blocker_id, blocked_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_mutes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    muter_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    muted_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(muter_id, muted_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.user_follows (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    follower_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    following_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(follower_id, following_id)
+);
+
+-- 7. INFRASTRUCTURE TABLES
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    actor_user_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.realtime_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    payload JSONB DEFAULT '{}'::jsonb,
+    idempotency_key TEXT UNIQUE,
+    feed_stream_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. ROW LEVEL SECURITY
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.post_comments ENABLE ROW LEVEL SECURITY;

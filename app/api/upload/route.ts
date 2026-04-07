@@ -1,13 +1,14 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const userId = await resolveAuthenticatedUserId(request)
 
-    if (authError || !user) {
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now()
     const extension = file.name.split('.').pop()
-    const filename = `${user.id}/${timestamp}.${extension}`
+    const filename = `${userId}/${timestamp}.${extension}`
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabaseAdmin.storage

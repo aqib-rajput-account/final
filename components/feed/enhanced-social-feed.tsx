@@ -59,8 +59,11 @@ interface FeedPost {
     shared_post_id?: string
     shared_author_name?: string
     shared_post_excerpt?: string
+    pinned_at?: string | null
     [key: string]: unknown
   } | null
+  media_urls?: string[]
+  pinned_at?: string | null
 }
 
 interface FeedPage {
@@ -122,6 +125,11 @@ const ANIMATIONS_CSS = `
   content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
   animation: shimmerGlint 3s infinite;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.fading-edge-mask {
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 `
 
@@ -243,6 +251,7 @@ export function EnhancedSocialFeed() {
     mutate: mutateFeed,
     size,
     setSize,
+    error: feedError,
     isLoading: feedLoading,
     isValidating: feedValidating,
   } = useSWRInfinite<FeedPage>(getKey, fetcher, {
@@ -270,15 +279,15 @@ export function EnhancedSocialFeed() {
       : uniquePosts
     // 3. Sort logic: Pinned first, then by date
     return filteredBySearch.sort((a: FeedPost, b: FeedPost) => {
-      const aPinned = (a as any).pinned_at || a.metadata?.pinned_at
-      const bPinned = (b as any).pinned_at || b.metadata?.pinned_at
+      const aPinned = a.pinned_at || a.metadata?.pinned_at
+      const bPinned = b.pinned_at || b.metadata?.pinned_at
       if (aPinned && !bPinned) return -1
       if (!aPinned && bPinned) return 1
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
   }, [feedPages, feedSearch])
-  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page) => page.userLikes) ?? []), [feedPages])
-  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page) => page.userBookmarks) ?? []), [feedPages])
+  const userLikes = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userLikes) ?? []), [feedPages])
+  const userBookmarks = useMemo(() => new Set(feedPages?.flatMap((page: FeedPage) => page.userBookmarks) ?? []), [feedPages])
   const hasMore = !!feedPages?.[feedPages.length - 1]?.nextCursor
   const isLoadingMore = feedValidating && size > 0
 
@@ -708,7 +717,7 @@ export function EnhancedSocialFeed() {
                 <AvatarFallback>{profile?.full_name?.[0] || 'U'}</AvatarFallback>
               </Avatar>
               <div className="flex-1 space-y-3">
-                <Textarea placeholder="Share an update… use @name for mentions" value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] resize-none" />
+                <Textarea id="new-post-box" placeholder="Share an update… use @name for mentions" value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] resize-none" />
                 {newPostImage && (
                   <div className="relative inline-block">
                     <img src={newPostImage} alt="Upload preview" width={200} height={150} className="rounded-lg object-cover" />
@@ -734,22 +743,26 @@ export function EnhancedSocialFeed() {
         </Card>
 
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white/5 p-1.5 rounded-xl border border-white/5 shadow-inner">
-            <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-              {['all', 'general', 'announcement', 'event', 'discussion'].map((cat) => (
-                <Button
-                  key={cat}
-                  variant={selectedCategory === cat ? 'default' : 'ghost'}
-                  size="sm"
-                  className={cn(
-                    'h-8 rounded-lg text-xs font-medium transition-all duration-300 px-3 shrink-0 capitalize',
-                    selectedCategory === cat ? 'shadow-md scale-105' : 'text-muted-foreground hover:bg-white/10'
-                  )}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat === 'all' ? 'All Feed' : cat}
-                </Button>
-              ))}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white/[0.03] p-1 rounded-2xl border border-white/5 shadow-inner backdrop-blur-md">
+            <div className="relative flex-1 w-full sm:w-auto min-w-0">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar fading-edge-mask px-6 scroll-smooth">
+                {['all', 'general', 'announcement', 'event', 'discussion'].map((cat) => (
+                  <Button
+                    key={cat}
+                    variant={selectedCategory === cat ? 'default' : 'ghost'}
+                    size="sm"
+                    className={cn(
+                      'h-8 rounded-full text-[11px] font-semibold transition-all duration-300 px-4 shrink-0 capitalize tracking-wide',
+                      selectedCategory === cat 
+                        ? 'shadow-lg shadow-primary/20 scale-105 bg-primary text-primary-foreground' 
+                        : 'text-muted-foreground/60 hover:bg-white/5 hover:text-foreground'
+                    )}
+                    onClick={() => setSelectedCategory(cat)}
+                  >
+                    {cat === 'all' ? 'All Feed' : cat}
+                  </Button>
+                ))}
+              </div>
             </div>
             
             <div className="relative w-full sm:w-64 group">
@@ -778,14 +791,53 @@ export function EnhancedSocialFeed() {
               <div className="feed-refresh-glow h-full w-1/2 bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
             </div>
           )}
-          {feedLoading ? (
-            <>
+          {feedError ? (
+            <Card className="glass-card border-dashed bg-destructive/5">
+              <CardContent className="p-12 text-center">
+                <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                  <X className="h-6 w-6 text-destructive" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">Failed to load feed</h3>
+                <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
+                  We encountered an issue while fetching the community posts. Please try again.
+                </p>
+                <Button 
+                  onClick={() => mutateFeed()} 
+                  variant="outline" 
+                  className="gap-2 hover:bg-primary/10"
+                >
+                  <Repeat2 className="h-4 w-4" /> Try Again
+                </Button>
+              </CardContent>
+            </Card>
+          ) : feedLoading ? (
+            <div className="space-y-4">
               <PostSkeleton />
               <PostSkeleton />
               <PostSkeleton />
-            </>
+            </div>
           ) : posts.length === 0 ? (
-            <Card><CardContent className="p-8 text-center"><MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" /><h3 className="font-semibold mb-2">No posts yet</h3><p className="text-muted-foreground">Be the first to share something with the community!</p></CardContent></Card>
+            <Card className="glass-card border-dashed">
+              <CardContent className="p-16 text-center">
+                <div className="h-16 w-16 rounded-full bg-primary/5 flex items-center justify-center mx-auto mb-6">
+                  <MessageCircle className="h-8 w-8 text-primary/40" />
+                </div>
+                <h3 className="font-semibold text-xl mb-2">No community posts yet</h3>
+                <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
+                  Share an announcement, event, or start a discussion to connect with your community members.
+                </p>
+                <Button 
+                  onClick={() => {
+                    const el = document.getElementById('new-post-box')
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    el?.focus()
+                  }}
+                  className="gap-2 shadow-lg shadow-primary/20"
+                >
+                  <Send className="h-4 w-4" /> Start the Conversation
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             posts.map((post: FeedPost, idx: number) => (
               <div key={post.id} className={cn(idx === 0 && !feedLoading ? 'animate-in-post' : '')}>
@@ -1036,8 +1088,8 @@ function PostCard({
                 )}
               </Link>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
-                {post.metadata?.pinned_at && (
-                  <Badge variant="ghost" className="h-4 p-0 px-1 text-[10px] bg-amber-500/10 text-amber-500 font-bold border-none">
+                {!!post.metadata?.pinned_at && (
+                  <Badge variant="secondary" className="h-4 p-0 px-1 text-[10px] bg-amber-500/10 text-amber-500 font-bold border-none">
                     Pinned
                   </Badge>
                 )}
@@ -1069,26 +1121,26 @@ function PostCard({
           </div>
         )}
 
-        {post.image_url && !((post as any).media_urls?.length) && (
+        {post.image_url && !(post.media_urls?.length) && (
           <div className="w-full aspect-video rounded-lg overflow-hidden border">
             <img src={post.image_url} alt="Post image" className="h-full w-full object-cover" />
           </div>
         )}
 
-        {(post as any).media_urls?.length > 0 && (
+        {post.media_urls && post.media_urls.length > 0 && (
           <div className={cn(
             "grid gap-2 rounded-lg overflow-hidden border bg-muted/20",
-            (post as any).media_urls.length === 1 ? "grid-cols-1" : "grid-cols-2"
+            post.media_urls.length === 1 ? "grid-cols-1" : "grid-cols-2"
           )}>
-            {(post as any).media_urls.slice(0, 4).map((url: string, i: number) => (
+            {post.media_urls.slice(0, 4).map((url: string, i: number, arr: string[]) => (
               <div key={i} className={cn(
                 "relative aspect-square",
-                (post as any).media_urls.length === 3 && i === 0 ? "row-span-2 aspect-auto" : ""
+                arr.length === 3 && i === 0 ? "row-span-2 aspect-auto" : ""
               )}>
                 <img src={url} alt={`Post media ${i}`} className="h-full w-full object-cover" />
-                {(post as any).media_urls.length > 4 && i === 3 && (
+                {arr.length > 4 && i === 3 && (
                   <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold text-lg">
-                    +{(post as any).media_urls.length - 4}
+                    +{arr.length - 4}
                   </div>
                 )}
               </div>
@@ -1111,7 +1163,7 @@ function PostCard({
             <Heart className={cn('h-4 w-4 transition-transform', isLiked && 'fill-current heart-pulse')} />
             Like
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2 active:scale-95 px-3" onClick={() => setShowComments((v) => !v)}>
+          <Button variant="ghost" size="sm" className="gap-2 active:scale-95 px-3" onClick={() => setShowComments((v: boolean) => !v)}>
             <MessageCircle className="h-4 w-4" />
             Comment
           </Button>
@@ -1135,11 +1187,16 @@ function PostCard({
               <div className="flex items-center gap-2 text-xs text-muted-foreground"><Reply className="h-3.5 w-3.5" /><span>Replying with prefix: <strong>{replyPrefix}</strong></span><Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setReplyPrefix('')}>Clear</Button></div>
             )}
             <div className="flex gap-2">
-              <Input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Comment… use @name and hit Enter" onKeyDown={(e) => e.key === 'Enter' && submitComment()} />
+              <Input 
+                value={commentInput} 
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCommentInput(e.target.value)} 
+                placeholder="Comment… use @name and hit Enter" 
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && submitComment()} 
+              />
               <Button onClick={submitComment} disabled={!commentInput.trim()}><Send className="h-4 w-4" /></Button>
             </div>
 
-            {comments.map((comment) => (
+            {comments.map((comment: PostComment) => (
               <div key={comment.id} className="rounded-md bg-muted/40 p-2.5">
                 <div className="flex items-center justify-between gap-3">
                   <Link href={`/profile/${comment.author_id}`} className="text-xs font-medium hover:underline">{comment.author?.full_name || 'Member'}</Link>

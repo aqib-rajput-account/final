@@ -62,7 +62,12 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
-    const hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
+    let hiddenUsers = new Set<string>()
+    try {
+      hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
+    } catch (e) {
+      console.error('Safety check failed, falling back to empty blocklist', e)
+    }
 
     let query = supabase
       .from('posts')
@@ -87,8 +92,8 @@ export async function GET(request: Request) {
           profession,
           role
         ),
-        like_count,
-        comment_count
+        likes_count,
+        comments_count
       `,
         { count: 'planned' }
       )
@@ -126,8 +131,6 @@ export async function GET(request: Request) {
         .map((post: any) => ({
           ...post,
           content: post.body,
-          likes_count: post.like_count || 0,
-          comments_count: post.comment_count || 0,
         })) || []
 
     const postIds = formattedPosts.map((p: any) => p.id)
