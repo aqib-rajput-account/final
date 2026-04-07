@@ -41,6 +41,33 @@ function normalizeCommentRow(row: Record<string, any>): NormalizedComment {
   }
 }
 
+function normalizeCommentFingerprintValue(value: unknown) {
+  if (typeof value !== 'string') return ''
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function normalizeCommentFingerprintTime(value: unknown) {
+  if (typeof value !== 'string' || value.length === 0) return ''
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) {
+    return value.slice(0, 19)
+  }
+  return new Date(parsed).toISOString().slice(0, 19)
+}
+
+function buildCommentFingerprint(row: Record<string, any>) {
+  const postId = typeof row.post_id === 'string' || typeof row.post_id === 'number' ? String(row.post_id) : ''
+  const authorId = typeof row.author_id === 'string' || typeof row.author_id === 'number' ? String(row.author_id) : ''
+  const content = normalizeCommentFingerprintValue(typeof row.body === 'string' ? row.body : row.content)
+  const createdAt = normalizeCommentFingerprintTime(row.created_at)
+
+  if (postId && authorId && content && createdAt) {
+    return `comment:${postId}:${authorId}:${content}:${createdAt}`
+  }
+
+  return `comment-id:${String(row.id ?? '')}`
+}
+
 async function fetchComments(supabase: any, postId: string): Promise<NormalizedComment[]> {
   let socialClient = supabase
   try {
@@ -68,8 +95,18 @@ async function fetchComments(supabase: any, postId: string): Promise<NormalizedC
     .order('created_at', { ascending: true })
 
   const merged = [
-    ...(!canonical.error ? (canonical.data ?? []).map((row: Record<string, any>) => ({ ...normalizeCommentRow(row), _key: `comment:${row.id}` })) : []),
-    ...(!legacy.error ? (legacy.data ?? []).map((row: Record<string, any>) => ({ ...normalizeCommentRow(row), _key: `post_comment:${row.id}` })) : []),
+    ...(!canonical.error
+      ? (canonical.data ?? []).map((row: Record<string, any>) => ({
+          ...normalizeCommentRow(row),
+          _key: buildCommentFingerprint(row),
+        }))
+      : []),
+    ...(!legacy.error
+      ? (legacy.data ?? []).map((row: Record<string, any>) => ({
+          ...normalizeCommentRow(row),
+          _key: buildCommentFingerprint(row),
+        }))
+      : []),
   ]
 
   return merged

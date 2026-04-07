@@ -74,6 +74,38 @@ function ensureObject(value: unknown): Record<string, unknown> {
   return isObject(value) ? { ...value } : {}
 }
 
+function normalizeSemanticText(value: unknown) {
+  if (typeof value !== 'string') return ''
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function normalizeTimestampToSecond(value: unknown) {
+  if (typeof value !== 'string' || value.length === 0) return ''
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) {
+    return value.slice(0, 19)
+  }
+  return new Date(parsed).toISOString().slice(0, 19)
+}
+
+function buildCommentSemanticKey(row: Record<string, unknown>) {
+  const postId = typeof row.post_id === 'string' || typeof row.post_id === 'number' ? String(row.post_id) : ''
+  const authorId = typeof row.author_id === 'string' || typeof row.author_id === 'number' ? String(row.author_id) : ''
+  const content = normalizeSemanticText(typeof row.body === 'string' ? row.body : row.content)
+  const createdAt = normalizeTimestampToSecond(row.created_at)
+
+  if (postId && authorId && content && createdAt) {
+    return `comment:${postId}:${authorId}:${content}:${createdAt}`
+  }
+
+  const id = typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id) : ''
+  if (postId && id) {
+    return `comment-id:${postId}:${id}`
+  }
+
+  return `comment-fallback:${JSON.stringify([postId, authorId, content, createdAt])}`
+}
+
 function normalizeProfile(profile: unknown) {
   const candidate = Array.isArray(profile) ? profile[0] : profile
   if (!candidate || typeof candidate !== 'object') return null
@@ -128,7 +160,8 @@ function buildFeedSearchHaystack(post: Record<string, unknown>) {
 
 async function fetchCommentRows(
   supabase: any,
-  postIds: string[]
+  postIds: string[],
+  hiddenAuthorIds?: Set<string>
 ): Promise<Array<{ post_id: string | number; dedupe_key: string }>> {
   let socialClient = supabase
   try {
@@ -138,27 +171,31 @@ async function fetchCommentRows(
   }
 
   const [canonical, legacy] = await Promise.all([
-    socialClient.from('comments').select('id, post_id').in('post_id', postIds),
-    socialClient.from('post_comments').select('id, post_id').in('post_id', postIds),
+    socialClient.from('comments').select('id, post_id, author_id, body, created_at').in('post_id', postIds),
+    socialClient.from('post_comments').select('id, post_id, author_id, content, created_at').in('post_id', postIds),
   ])
 
   const merged: Array<{ post_id: string | number; dedupe_key: string }> = []
 
   if (!canonical.error) {
     merged.push(
-      ...(canonical.data ?? []).map((row: { id: string | number; post_id: string | number }) => ({
-        post_id: row.post_id,
-        dedupe_key: `comment:${row.id}`,
-      }))
+      ...(canonical.data ?? [])
+        .filter((row: { author_id?: string | number | null }) => !hiddenAuthorIds?.has(String(row.author_id ?? '')))
+        .map((row: Record<string, unknown>) => ({
+          post_id: row.post_id as string | number,
+          dedupe_key: buildCommentSemanticKey(row),
+        }))
     )
   }
 
   if (!legacy.error) {
     merged.push(
-      ...(legacy.data ?? []).map((row: { id: string | number; post_id: string | number }) => ({
-        post_id: row.post_id,
-        dedupe_key: `post_comment:${row.id}`,
-      }))
+      ...(legacy.data ?? [])
+        .filter((row: { author_id?: string | number | null }) => !hiddenAuthorIds?.has(String(row.author_id ?? '')))
+        .map((row: Record<string, unknown>) => ({
+          post_id: row.post_id as string | number,
+          dedupe_key: buildCommentSemanticKey(row),
+        }))
     )
   }
 
@@ -399,7 +436,10 @@ export function matchesFeedSearchQuery(post: Record<string, unknown>, q: string 
 export async function enrichFeedPosts(
   supabase: any,
   posts: Array<Record<string, unknown>>,
-  viewerId: string | null
+  viewerId: string | null,
+  options?: {
+    hiddenAuthorIds?: Set<string>
+  }
 ) {
   const postIds = posts.map((post) => String(post.id))
 
@@ -416,7 +456,7 @@ export async function enrichFeedPosts(
     viewerId
       ? supabase.from('post_bookmarks').select('post_id').in('post_id', postIds).eq('user_id', viewerId)
       : Promise.resolve({ data: [] as Array<{ post_id: string | number }>, error: null }),
-    fetchCommentRows(supabase, postIds),
+    fetchCommentRows(supabase, postIds, options?.hiddenAuthorIds),
     fetchPostMediaMap(supabase, postIds),
   ])
 
@@ -483,7 +523,8 @@ export async function enrichFeedPosts(
 export async function fetchNormalizedFeedPostById(
   supabase: any,
   postId: string,
-  viewerId: string | null
+  viewerId: string | null,
+  hiddenAuthorIds?: Set<string>
 ) {
   const row = await fetchFeedPostRowById(supabase, postId)
   if (!row) {
@@ -495,6 +536,6 @@ export async function fetchNormalizedFeedPostById(
     return null
   }
 
-  const enriched = await enrichFeedPosts(supabase, [row], viewerId)
+  const enriched = await enrichFeedPosts(supabase, [row], viewerId, { hiddenAuthorIds })
   return enriched.posts[0] ?? null
 }

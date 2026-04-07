@@ -5,6 +5,7 @@ import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 import { canManageAllMosques, normalizeClerkRole } from '@/lib/auth/clerk-rbac'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
+import { getMutedAndBlockedUserIds } from '@/backend/safety/service'
 import { fetchNormalizedFeedPostById } from '@/lib/feed-utils'
 import { applyAudienceToMetadata, getSelectedViewerIds, normalizeStoredVisibility } from '@/lib/feed-visibility'
 import {
@@ -121,12 +122,13 @@ export async function GET(
     const { id } = await params
     const supabase = await createClient()
     const userId = await resolveAuthenticatedUserId(request)
+    const hiddenUsers = userId ? await getMutedAndBlockedUserIds(supabase, userId).catch(() => new Set<string>()) : new Set<string>()
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const post = await fetchNormalizedFeedPostById(supabase, id, userId)
+    const post = await fetchNormalizedFeedPostById(supabase, id, userId, hiddenUsers)
     if (!post) {
       return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     }
@@ -146,6 +148,7 @@ export async function PATCH(
     const supabase = await createClient()
     const userId = await resolveAuthenticatedUserId(request)
     const { orgRole } = await auth()
+    const hiddenUsers = userId ? await getMutedAndBlockedUserIds(supabase, userId).catch(() => new Set<string>()) : new Set<string>()
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -249,7 +252,7 @@ export async function PATCH(
       },
     })
 
-    const post = await fetchNormalizedFeedPostById(supabase, id, userId)
+    const post = await fetchNormalizedFeedPostById(supabase, id, userId, hiddenUsers)
     return NextResponse.json({ post })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })

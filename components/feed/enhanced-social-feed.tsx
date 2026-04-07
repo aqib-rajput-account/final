@@ -199,6 +199,13 @@ function VisibilityStatusIcon({ value }: { value: ComposerVisibility }) {
   return <Globe2 className="h-4 w-4 text-muted-foreground" />
 }
 
+function resolveRealtimeActorUserId(event: RealtimeEventEnvelope) {
+  if (typeof event.actorUserId === 'string' && event.actorUserId) return event.actorUserId
+  if (typeof event.payload.actorUserId === 'string' && event.payload.actorUserId) return event.payload.actorUserId
+  if (typeof event.payload.authorId === 'string' && event.payload.authorId) return event.payload.authorId
+  return null
+}
+
 function PostSkeleton() {
   return (
     <Card className="border-border/60 shadow-sm">
@@ -589,6 +596,87 @@ export function EnhancedSocialFeed() {
     }, false)
   }, [mutateFeed])
 
+  const upsertFeedPost = useCallback((nextPost: FeedPost, options?: { prepend?: boolean }) => {
+    mutateFeed((pages) => {
+      if (!pages || pages.length === 0) {
+        return [{ data: [nextPost], userLikes: [], userBookmarks: [], nextCursor: null, totalCount: null }]
+      }
+
+      let found = false
+      const nextPages = pages.map((page) => {
+        const data = page.data
+          .map((post) => {
+            if (post.id !== nextPost.id) return post
+            found = true
+            return nextPost
+          })
+          .filter((post, index, array) => array.findIndex((candidate) => candidate.id === post.id) === index)
+
+        return { ...page, data }
+      })
+
+      if (found && options?.prepend) {
+        return [
+          {
+            ...nextPages[0],
+            data: [nextPost, ...nextPages[0].data.filter((post) => post.id !== nextPost.id)],
+          },
+          ...nextPages.slice(1),
+        ]
+      }
+
+      if (found || !options?.prepend) {
+        return nextPages
+      }
+
+      return [
+        {
+          ...nextPages[0],
+          data: [nextPost, ...nextPages[0].data.filter((post) => post.id !== nextPost.id)],
+        },
+        ...nextPages.slice(1),
+      ]
+    }, false)
+  }, [mutateFeed])
+
+  const removeFeedPost = useCallback((postId: string) => {
+    mutateFeed((pages) => {
+      if (!pages) return pages
+      return pages.map((page) => ({
+        ...page,
+        data: page.data.filter((post) => post.id !== postId),
+      }))
+    }, false)
+  }, [mutateFeed])
+
+  const refreshPostFromServer = useCallback(async (postId: string, options?: { prepend?: boolean; removeIfMissing?: boolean }) => {
+    try {
+      const response = await fetch(`/api/feed/posts/${postId}`, { cache: 'no-store' })
+      let payload: { post?: FeedPost; error?: string } | null = null
+
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+
+      if (response.status === 404) {
+        if (options?.removeIfMissing) {
+          removeFeedPost(postId)
+        }
+        return
+      }
+
+      if (!response.ok || !payload?.post) {
+        throw new Error(payload?.error || 'Failed to refresh post')
+      }
+
+      upsertFeedPost(payload.post, { prepend: options?.prepend })
+    } catch {
+      mutateFeed()
+    }
+  }, [mutateFeed, removeFeedPost, upsertFeedPost])
+
   const optimisticAddPost = useCallback((
     content: string,
     nextAttachments: FeedMediaAttachment[],
@@ -596,13 +684,14 @@ export function EnhancedSocialFeed() {
     visibility: ComposerVisibility,
     selectedIds: string[]
   ) => {
+    const optimisticId = `optimistic-${Date.now()}`
     const metadata = applyAudienceToMetadata(
       nextAttachments.length > 0 ? { attachments: nextAttachments } : {},
       visibility,
       selectedIds
     )
     const optimisticPost: FeedPost = {
-      id: `optimistic-${Date.now()}`,
+      id: optimisticId,
       content,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -638,6 +727,8 @@ export function EnhancedSocialFeed() {
 
       return [{ ...pages[0], data: [optimisticPost, ...pages[0].data] }, ...pages.slice(1)]
     }, false)
+
+    return optimisticId
   }, [mutateFeed, profile, resolvedRole, userId])
 
   const applyFeedSearch = useCallback((term: string) => {
@@ -665,17 +756,13 @@ export function EnhancedSocialFeed() {
       message: 'Feed consumed realtime event',
       tags: { eventType: event.eventType, entityId: event.entityId },
     })
-    const actorUserId = typeof event.payload.actorUserId === 'string' ? event.payload.actorUserId : null
+    const actorUserId = resolveRealtimeActorUserId(event)
 
     if (event.eventType === 'post.liked' || event.eventType === 'post.unliked') {
       if (actorUserId && actorUserId === userId) return
       const postId = String(event.payload.postId ?? event.entityId)
-      const direction = event.eventType === 'post.liked' ? 1 : -1
-      patchFeed((post) =>
-        post.id === postId
-          ? { ...post, likes_count: Math.max(0, post.likes_count + direction) }
-          : post
-      )
+      if (!postId) return
+      void refreshPostFromServer(postId)
       return
     }
 
@@ -683,50 +770,38 @@ export function EnhancedSocialFeed() {
       if (actorUserId && actorUserId === userId) return
       const postId = String(event.payload.postId ?? '')
       if (!postId) return
-      patchFeed((post) =>
-        post.id === postId ? { ...post, comments_count: post.comments_count + 1 } : post
-      )
+      void refreshPostFromServer(postId)
       return
     }
 
     if (event.eventType === 'post.created') {
       if (actorUserId && actorUserId === userId) {
-        mutateFeed()
         return
       }
       const postId = String(event.payload.postId ?? event.entityId)
-      fetch(`/api/feed/posts/${postId}`, { cache: 'no-store' })
-        .then(async (response) => {
-          const payload = await response.json()
-          if (!response.ok || !payload.post) throw new Error(payload.error || 'Failed to load new post')
-
-          mutateFeed((pages) => {
-            if (!pages) return pages
-            const exists = pages.some((page) => page.data.some((post) => post.id === postId))
-            if (exists) return pages
-
-            return [
-              {
-                ...pages[0],
-                data: [payload.post as FeedPost, ...pages[0].data],
-              },
-              ...pages.slice(1),
-            ]
-          }, false)
-        })
-        .catch(() => mutateFeed())
+      if (!postId) return
+      void refreshPostFromServer(postId, { prepend: true })
       return
     }
 
-    if (event.eventType === 'post.updated' || event.eventType === 'post.deleted') {
-      mutateFeed()
+    if (event.eventType === 'post.updated') {
+      const postId = String(event.payload.postId ?? event.entityId)
+      if (!postId) return
+      void refreshPostFromServer(postId, { removeIfMissing: true })
+      return
+    }
+
+    if (event.eventType === 'post.deleted') {
+      const postId = String(event.payload.postId ?? event.entityId)
+      if (!postId) return
+      removeFeedPost(postId)
       return
     }
 
     if (event.eventType === 'follow.created' || event.eventType === 'follow.deleted') {
       mutateMembers()
     }
-  }, [mutateFeed, mutateMembers, patchFeed, userId])
+  }, [mutateFeed, mutateMembers, refreshPostFromServer, removeFeedPost, userId])
 
   useEffect(() => {
     const returnContext = resolveFeedReturnContext()
@@ -879,7 +954,7 @@ export function EnhancedSocialFeed() {
       selectedAudienceIds
     )
 
-    optimisticAddPost(trimmedContent, attachments, postType, composerVisibility, selectedAudienceIds)
+    const optimisticPostId = optimisticAddPost(trimmedContent, attachments, postType, composerVisibility, selectedAudienceIds)
 
     try {
       const response = await fetch('/api/feed/posts', {
@@ -900,14 +975,35 @@ export function EnhancedSocialFeed() {
         throw new Error(payload.error || 'Failed to create post')
       }
 
+      mutateFeed((pages) => {
+        if (!pages) return pages
+
+        return pages.map((page, pageIndex) => {
+          const nextData = page.data
+            .map((post) => (post.id === optimisticPostId && payload.post ? (payload.post as FeedPost) : post))
+            .filter((post, index, array) => array.findIndex((candidate) => candidate.id === post.id) === index)
+
+          return pageIndex === 0 ? { ...page, data: nextData } : { ...page, data: nextData }
+        })
+      }, false)
+
       setNewPostContent('')
       setAttachments([])
       setComposerVisibility('public')
       setSelectedAudienceIds([])
       setAudienceSearch('')
       toast.success(composerMode === 'announcement' ? 'Announcement published' : 'Post published')
-      mutateFeed()
+      if (!payload.post) {
+        mutateFeed()
+      }
     } catch (error: any) {
+      mutateFeed((pages) => {
+        if (!pages) return pages
+        return pages.map((page) => ({
+          ...page,
+          data: page.data.filter((post) => post.id !== optimisticPostId),
+        }))
+      }, false)
       toast.error(error?.message || 'Failed to create post')
       mutateFeed()
     } finally {
@@ -935,11 +1031,12 @@ export function EnhancedSocialFeed() {
       const response = await fetch(`/api/posts/${postId}/like`, { method: isLiked ? 'DELETE' : 'POST' })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to update like')
+      void refreshPostFromServer(postId)
     } catch (error: any) {
       toast.error(error?.message || 'Failed to update like')
       mutateFeed()
     }
-  }, [mutateFeed, patchFeed, userId])
+  }, [mutateFeed, patchFeed, refreshPostFromServer, userId])
 
   const handleBookmark = useCallback(async (postId: string, isBookmarked: boolean) => {
     patchFeed((post) =>
@@ -981,11 +1078,12 @@ export function EnhancedSocialFeed() {
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Failed to comment')
+      void refreshPostFromServer(postId)
     } catch (error: any) {
       toast.error(error?.message || 'Failed to comment')
       mutateFeed()
     }
-  }, [mutateFeed, patchFeed])
+  }, [mutateFeed, patchFeed, refreshPostFromServer])
 
   const handleUpdatePost = useCallback(async () => {
     if (!editTargetPost) return
@@ -1023,26 +1121,24 @@ export function EnhancedSocialFeed() {
       if (!response.ok) throw new Error(payload.error || 'Failed to update post')
 
       toast.success('Post updated')
+      if (payload.post) {
+        upsertFeedPost(payload.post as FeedPost)
+      } else {
+        mutateFeed()
+      }
       setEditTargetPost(null)
       setEditContent('')
       setEditVisibility('public')
       setEditSelectedAudienceIds([])
       setEditAudienceSearch('')
-      mutateFeed()
     } catch (error: any) {
       toast.error(error?.message || 'Failed to update post')
       mutateFeed()
     }
-  }, [editContent, editSelectedAudienceIds, editTargetPost, editVisibility, mutateFeed, patchFeed])
+  }, [editContent, editSelectedAudienceIds, editTargetPost, editVisibility, mutateFeed, patchFeed, upsertFeedPost])
 
   const handleDeletePost = useCallback(async (postId: string) => {
-    mutateFeed((pages) => {
-      if (!pages) return pages
-      return pages.map((page) => ({
-        ...page,
-        data: page.data.filter((post) => post.id !== postId),
-      }))
-    }, false)
+    removeFeedPost(postId)
 
     try {
       const response = await fetch(`/api/feed/posts/${postId}`, { method: 'DELETE' })
@@ -1053,7 +1149,7 @@ export function EnhancedSocialFeed() {
       toast.error(error?.message || 'Failed to delete post')
       mutateFeed()
     }
-  }, [mutateFeed])
+  }, [mutateFeed, removeFeedPost])
 
   const handleCopyLink = useCallback(async (post: FeedPost) => {
     try {
@@ -1504,6 +1600,7 @@ function PostCard({
 }) {
   const [showComments, setShowComments] = useState(false)
   const [commentInput, setCommentInput] = useState('')
+  const { profile } = useAuth()
 
   const { data: commentsResponse, mutate: mutateComments } = useSWR<{ comments: PostComment[] }>(
     showComments ? `/api/posts/${post.id}/comments` : null,
@@ -1525,12 +1622,12 @@ function PostCard({
       id: `temp-${Date.now()}`,
       content: trimmed,
       created_at: new Date().toISOString(),
-      author_id: 'self',
+      author_id: profile?.id || 'self',
       author: {
-        id: 'self',
-        full_name: 'You',
-        avatar_url: null,
-        role: 'member',
+        id: profile?.id || 'self',
+        full_name: profile?.full_name || 'You',
+        avatar_url: profile?.avatar_url || null,
+        role: profile?.role || 'member',
       },
     }
 
@@ -1562,7 +1659,7 @@ function PostCard({
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{post.profiles?.profession || displayRole || 'Member'}</span>
-                <span>•</span>
+                <span>&middot;</span>
                 <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
               </div>
             </div>
@@ -1612,6 +1709,10 @@ function PostCard({
         {showComments ? (
           <div className="space-y-3 border-t border-border/60 pt-3">
             <div className="flex gap-2">
+              <Avatar className="mt-1 h-9 w-9">
+                <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || 'You'} />
+                <AvatarFallback>{getInitials(profile?.full_name)}</AvatarFallback>
+              </Avatar>
               <Input
                 value={commentInput}
                 onChange={(event) => setCommentInput(event.target.value)}
@@ -1633,12 +1734,20 @@ function PostCard({
               <div className="space-y-3">
                 {comments.map((comment) => (
                   <div key={comment.id} className="rounded-2xl bg-muted/35 px-4 py-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">{comment.author?.full_name || 'Member'}</span>
-                      <span>•</span>
-                      <span>{formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}</span>
+                    <div className="flex gap-3">
+                      <Avatar className="mt-0.5 h-9 w-9">
+                        <AvatarImage src={comment.author?.avatar_url || undefined} alt={comment.author?.full_name || 'Member'} />
+                        <AvatarFallback>{getInitials(comment.author?.full_name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{comment.author?.full_name || 'Member'}</span>
+                          <span>&middot;</span>
+                          <span>{formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}</span>
+                        </div>
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{comment.content}</p>
+                      </div>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{comment.content}</p>
                   </div>
                 ))}
               </div>

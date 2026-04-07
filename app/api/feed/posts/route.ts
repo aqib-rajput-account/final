@@ -261,7 +261,7 @@ export async function GET(request: Request) {
       limit,
     })
 
-    const enriched = await enrichFeedPosts(supabase, pagePosts, userId)
+    const enriched = await enrichFeedPosts(supabase, pagePosts, userId, { hiddenAuthorIds: hiddenUsers })
     validateTimelineConsistency({ traceId, items: enriched.posts })
 
     const newestCreatedAt = enriched.posts[0]?.created_at
