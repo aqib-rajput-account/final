@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     // Get community members (include current user so feed sidebar can always show "You")
     const { data: members, error } = await supabase
       .from('profiles')
-      .select('id, full_name, avatar_url, bio, profession, role')
+      .select('id, full_name, avatar_url, bio, profession, role, last_seen_at')
       .limit(100)
       .order('created_at', { ascending: false })
 

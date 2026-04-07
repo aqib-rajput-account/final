@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
-import { buildCacheKey, deleteCachedValue, getCachedValue, hashCacheKey, setCachedValue } from '@/lib/infrastructure/cache'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 import { enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
 import {
@@ -14,13 +13,141 @@ import {
   withServerTiming,
 } from '@/lib/infrastructure/observability'
 import { evaluateTimelineLagAlert } from '@/lib/infrastructure/alerts'
-import { validateCounterParity, validateTimelineConsistency } from '@/lib/infrastructure/data-quality'
+import { validateTimelineConsistency } from '@/lib/infrastructure/data-quality'
+import { FEED_POST_SELECT, enrichFeedPosts, fetchNormalizedFeedPostById } from '@/lib/feed-utils'
+import {
+  getPrimaryLegacyImageUrl,
+  isAnnouncementFeedPost,
+  MAX_FEED_ATTACHMENTS,
+  mergeMetadataWithFeedAttachments,
+  normalizeFeedAttachments,
+} from '@/lib/feed/media'
 
 export const dynamic = 'force-dynamic'
+
+type FeedFilter = 'all' | 'general' | 'announcements'
+
+function resolveFeedFilter(searchParams: URLSearchParams): FeedFilter {
+  const requestedFeed = searchParams.get('feed')
+  if (requestedFeed === 'general' || requestedFeed === 'announcements' || requestedFeed === 'all') {
+    return requestedFeed
+  }
+
+  const legacyCategory = searchParams.get('category')
+  if (legacyCategory === 'announcement') return 'announcements'
+  if (legacyCategory === 'general') return 'general'
+  return 'all'
+}
+
+function matchesFeedFilter(post: { post_type?: string | null; metadata?: Record<string, unknown> | null }, feed: FeedFilter) {
+  if (feed === 'announcements') return isAnnouncementFeedPost(post)
+  if (feed === 'general') return !isAnnouncementFeedPost(post)
+  return true
+}
+
+function normalizeSearchQuery(raw: string | null) {
+  const trimmed = raw?.trim() ?? ''
+  return trimmed.length > 0 ? trimmed : null
+}
+
+async function persistPostMedia(supabase: any, postId: string, attachments: ReturnType<typeof normalizeFeedAttachments>) {
+  if (attachments.length === 0) {
+    await supabase.from('post_media').delete().eq('post_id', postId)
+    return
+  }
+
+  await supabase.from('post_media').delete().eq('post_id', postId)
+
+  const { error } = await supabase.from('post_media').insert(
+    attachments.map((attachment, index) => ({
+      post_id: postId,
+      media_type: attachment.kind,
+      media_url: attachment.url,
+      sort_order: attachment.sortOrder ?? index,
+      metadata: {
+        mimeType: attachment.mimeType ?? null,
+        name: attachment.name ?? null,
+        size: attachment.size ?? null,
+        pathname: attachment.pathname ?? null,
+      },
+    }))
+  )
+
+  if (error) {
+    throw error
+  }
+}
+
+async function fetchFilteredPosts(args: {
+  supabase: any
+  hiddenUsers: Set<string>
+  feed: FeedFilter
+  q: string | null
+  cursor: string | null
+  limit: number
+}) {
+  const { supabase, hiddenUsers, feed, q, cursor, limit } = args
+  const batchSize = Math.min(Math.max(limit * 4, limit + 1), 80)
+  const collected: Array<Record<string, unknown>> = []
+  let nextQueryCursor = cursor
+  let exhausted = false
+  let loops = 0
+
+  while (collected.length < limit + 1 && !exhausted && loops < 6) {
+    loops += 1
+
+    let query = supabase
+      .from('posts')
+      .select(FEED_POST_SELECT)
+      .eq('is_published', true)
+      .in('visibility', ['public', 'followers'])
+      .order('created_at', { ascending: false })
+      .limit(batchSize)
+
+    if (nextQueryCursor) {
+      query = query.lt('created_at', nextQueryCursor)
+    }
+
+    if (q) {
+      query = query.ilike('body', `%${q}%`)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw error
+    }
+
+    const batch = (data ?? []) as Array<Record<string, unknown>>
+    if (batch.length === 0) {
+      exhausted = true
+      break
+    }
+
+    for (const post of batch) {
+      const authorId = String(post.author_id ?? '')
+      if (hiddenUsers.has(authorId)) continue
+      if (!matchesFeedFilter(post, feed)) continue
+      collected.push(post)
+      if (collected.length >= limit + 1) break
+    }
+
+    nextQueryCursor = typeof batch[batch.length - 1]?.created_at === 'string' ? String(batch[batch.length - 1].created_at) : null
+    if (batch.length < batchSize) {
+      exhausted = true
+    }
+  }
+
+  const pagePosts = collected.slice(0, limit)
+  const nextCursor = pagePosts.length === limit ? String(pagePosts[pagePosts.length - 1]?.created_at ?? '') || null : null
+
+  return { pagePosts, nextCursor }
+}
 
 export async function GET(request: Request) {
   const startedAt = Date.now()
   const traceId = getTraceIdFromRequest(request)
+
   try {
     const { userId } = await auth()
 
@@ -30,153 +157,32 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50)
     const cursor = searchParams.get('cursor')
-    const category = searchParams.get('category')
-    
-    const cacheKey = hashCacheKey(buildCacheKey([userId, limit, offset, cursor, category]))
-    const cachedResponse = await getCachedValue<{
-      data: unknown[]
-      userLikes: string[]
-      userBookmarks: string[]
-      nextCursor: string | null
-      totalCount: number | null
-    }>('timeline', cacheKey)
-
-    if (cachedResponse) {
-      const timing = withServerTiming(startedAt)
-      observeHistogram('feed.read.latency_ms', timing.durationMs, { cache: 'hit' })
-      logWithTrace({
-        traceId,
-        message: 'Feed timeline read served from cache',
-        tags: { userId, durationMs: timing.durationMs, cache: 'hit' },
-      })
-      return NextResponse.json(cachedResponse, {
-        headers: {
-          'Cache-Control': 'private, max-age=20, stale-while-revalidate=60',
-          'X-Cache': 'HIT',
-          'X-Trace-Id': traceId,
-        },
-      })
-    }
-
+    const feed = resolveFeedFilter(searchParams)
+    const q = normalizeSearchQuery(searchParams.get('q'))
     const supabase = await createClient()
+
     let hiddenUsers = new Set<string>()
     try {
       hiddenUsers = await getMutedAndBlockedUserIds(supabase, userId)
-    } catch (e) {
-      console.error('Safety check failed, falling back to empty blocklist', e)
+    } catch (error) {
+      console.error('Safety check failed, falling back to empty blocklist', error)
     }
 
-    let query = supabase
-      .from('posts')
-      .select(
-        `
-        id,
-        body,
-        image_url,
-        post_type,
-        category,
-        metadata,
-        visibility,
-        is_published,
-        created_at,
-        updated_at,
-        author_id,
-        mosque_id,
-        profiles:author_id(
-          id,
-          full_name,
-          avatar_url,
-          profession,
-          role
-        ),
-        likes_count,
-        comments_count
-      `,
-        { count: 'planned' }
-      )
-      .eq('is_published', true)
-      .in('visibility', ['public', 'followers'])
+    const { pagePosts, nextCursor } = await fetchFilteredPosts({
+      supabase,
+      hiddenUsers,
+      feed,
+      q,
+      cursor,
+      limit,
+    })
 
-    if (category && category !== 'all') {
-      query = query.eq('category', category)
-    }
+    const enriched = await enrichFeedPosts(supabase, pagePosts, userId)
+    validateTimelineConsistency({ traceId, items: enriched.posts })
 
-    query = query.order('created_at', { ascending: false })
-
-    if (cursor) {
-      query = query.lt('created_at', cursor).limit(limit)
-    } else {
-      query = query.range(offset, offset + limit - 1)
-    }
-
-    const { data: posts, error: postsError, count } = await query
-
-    if (postsError) {
-      observeCounter('feed.read.errors.total', 1, { reason: 'query_error' })
-      logWithTrace({
-        level: 'error',
-        message: 'Feed timeline query failed',
-        traceId,
-        error: postsError,
-      })
-      return NextResponse.json({ error: postsError.message }, { status: 500 })
-    }
-
-    const formattedPosts =
-      posts
-        ?.filter((post: any) => !hiddenUsers.has(post.author_id))
-        .map((post: any) => ({
-          ...post,
-          content: post.body,
-        })) || []
-
-    const postIds = formattedPosts.map((p: any) => p.id)
-    let userLikes: string[] = []
-    let userBookmarks: string[] = []
-
-    if (postIds.length > 0) {
-      const { data: likes } = await supabase
-        .from('reactions')
-        .select('post_id')
-        .in('post_id', postIds)
-        .eq('user_id', userId)
-        .eq('reaction_type', 'like')
-
-      userLikes = likes?.map((l) => l.post_id) || []
-
-      const { data: bookmarks } = await supabase
-        .from('post_bookmarks')
-        .select('post_id')
-        .in('post_id', postIds)
-        .eq('user_id', userId)
-
-      userBookmarks = bookmarks?.map((b) => b.post_id) || []
-    }
-
-    const nextCursor = formattedPosts.length === limit ? formattedPosts[formattedPosts.length - 1]?.created_at ?? null : null
-
-    const responsePayload = {
-      data: formattedPosts,
-      userLikes,
-      userBookmarks,
-      nextCursor,
-      totalCount: count ?? null,
-    }
-
-    validateTimelineConsistency({ traceId, items: formattedPosts })
-    for (const post of formattedPosts) {
-      validateCounterParity({
-        traceId,
-        likesCount: Number(post.likes_count ?? 0),
-        commentCount: Number(post.comments_count ?? 0),
-        likesEntries: Number(post.likes_count ?? 0),
-      })
-    }
-
-    const newestCreatedAt = formattedPosts[0]?.created_at
+    const newestCreatedAt = enriched.posts[0]?.created_at
     if (newestCreatedAt) {
       evaluateTimelineLagAlert({
         traceId,
@@ -185,29 +191,36 @@ export async function GET(request: Request) {
       })
     }
 
-    await setCachedValue('timeline', cacheKey, responsePayload, 20)
-
     const timing = withServerTiming(startedAt)
-    observeHistogram('feed.read.latency_ms', timing.durationMs, { cache: 'miss' })
+    observeHistogram('feed.read.latency_ms', timing.durationMs, { cache: 'bypass' })
     logWithTrace({
       traceId,
       message: 'Feed timeline read completed',
       tags: {
         userId,
         durationMs: timing.durationMs,
-        postCount: formattedPosts.length,
-        cache: 'miss',
+        postCount: enriched.posts.length,
+        feed,
+        search: q ? 'present' : 'empty',
       },
     })
 
-    return NextResponse.json(responsePayload, {
-      headers: {
-        'Cache-Control': 'private, max-age=20, stale-while-revalidate=60',
-        'X-Cache': 'MISS',
-        'X-Trace-Id': traceId,
+    return NextResponse.json(
+      {
+        data: enriched.posts,
+        userLikes: enriched.userLikes,
+        userBookmarks: enriched.userBookmarks,
+        nextCursor,
+        totalCount: null,
       },
-    })
-  } catch (error) {
+      {
+        headers: {
+          'Cache-Control': 'no-store',
+          'X-Trace-Id': traceId,
+        },
+      }
+    )
+  } catch (error: any) {
     observeCounter('feed.read.errors.total', 1, { reason: 'unexpected' })
     logWithTrace({
       level: 'error',
@@ -215,13 +228,14 @@ export async function GET(request: Request) {
       traceId,
       error,
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   const startedAt = Date.now()
   const traceId = getTraceIdFromRequest(request)
+
   try {
     const supabase = await createClient()
     const { userId } = await auth()
@@ -258,47 +272,78 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { content, image_url, post_type, category, metadata, mosque_id, is_published, visibility } = body
+    const media = normalizeFeedAttachments(body.media)
 
-    if (!content || String(content).trim().length === 0) {
-      observeCounter('feed.write.errors.total', 1, { reason: 'validation' })
-      return NextResponse.json({ error: 'Post content is required' }, { status: 400 })
+    if (Array.isArray(body.media) && body.media.length > MAX_FEED_ATTACHMENTS) {
+      observeCounter('feed.write.errors.total', 1, { reason: 'too_many_attachments' })
+      return NextResponse.json({ error: `You can upload up to ${MAX_FEED_ATTACHMENTS} attachments per post` }, { status: 400 })
     }
 
-    const safeVisibility = visibility === 'private' || visibility === 'followers' ? visibility : 'public'
+    const trimmedContent = typeof body.content === 'string' ? body.content.trim() : ''
+    if (!trimmedContent && media.length === 0) {
+      observeCounter('feed.write.errors.total', 1, { reason: 'validation' })
+      return NextResponse.json({ error: 'Post content or an attachment is required' }, { status: 400 })
+    }
 
-    const { data: post, error } = await supabase
+    const normalizedMetadata = mergeMetadataWithFeedAttachments(
+      typeof body.metadata === 'object' && body.metadata !== null ? body.metadata : null,
+      media
+    )
+    const safeVisibility = body.visibility === 'private' || body.visibility === 'followers' ? body.visibility : 'public'
+    const isAnnouncement = body.post_type === 'announcement'
+    const inferredPostType = isAnnouncement
+      ? 'announcement'
+      : media[0]?.kind === 'video'
+        ? 'video'
+        : media[0]?.kind === 'image'
+          ? 'image'
+          : media[0]?.kind === 'file'
+            ? 'file'
+            : 'text'
+
+    const { data: insertedPost, error } = await supabase
       .from('posts')
       .insert({
         author_id: userId,
-        body: String(content).trim(),
-        image_url: image_url ?? null,
-        post_type: post_type ?? 'text',
-        category: category ?? 'general',
-        metadata: metadata ?? {},
-        mosque_id: mosque_id ?? null,
-        is_published: is_published ?? true,
+        body: trimmedContent,
+        image_url: getPrimaryLegacyImageUrl(media),
+        post_type: inferredPostType,
+        category: typeof body.category === 'string' ? body.category : isAnnouncement ? 'announcement' : 'general',
+        metadata: normalizedMetadata,
+        mosque_id: typeof body.mosque_id === 'string' ? body.mosque_id : null,
+        is_published: typeof body.is_published === 'boolean' ? body.is_published : true,
         visibility: safeVisibility,
       })
-      .select('*')
+      .select('id')
       .single()
 
-    if (error) {
+    if (error || !insertedPost) {
       observeCounter('feed.write.errors.total', 1, { reason: 'insert_failed' })
       logWithTrace({ level: 'error', message: 'Post insert failed', traceId, error })
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: error?.message || 'Failed to create post' }, { status: 500 })
     }
 
-    const idempotencyKey = await resolveIdempotencyKey(request, `feed-post-create:${userId}:${post.id}`)
+    try {
+      await persistPostMedia(supabase, String(insertedPost.id), media)
+    } catch (mediaError) {
+      logWithTrace({
+        level: 'warn',
+        message: 'Post media persistence failed; relying on metadata fallback',
+        traceId,
+        error: mediaError,
+      })
+    }
+
+    const idempotencyKey = await resolveIdempotencyKey(request, `feed-post-create:${userId}:${insertedPost.id}`)
     await publishRealtimeEvent({
       eventType: 'post.created',
       entityType: 'post',
-      entityId: String(post.id),
+      entityId: String(insertedPost.id),
       actorUserId: userId,
       idempotencyKey,
       feedStreamId: safeVisibility === 'private' ? undefined : 'home',
       payload: {
-        postId: post.id,
+        postId: insertedPost.id,
         authorId: userId,
         visibility: safeVisibility,
         traceId,
@@ -310,7 +355,7 @@ export async function POST(request: Request) {
       queue: 'fanout',
       taskType: 'feed.post.created',
       payload: {
-        postId: String(post.id),
+        postId: String(insertedPost.id),
         authorId: userId,
       },
       traceId,
@@ -320,7 +365,7 @@ export async function POST(request: Request) {
       queue: 'notifications',
       taskType: 'notifications.post.created',
       payload: {
-        postId: String(post.id),
+        postId: String(insertedPost.id),
         actorUserId: userId,
       },
       traceId,
@@ -330,24 +375,24 @@ export async function POST(request: Request) {
       queue: 'counter-aggregation',
       taskType: 'counters.post.created',
       payload: {
-        postId: String(post.id),
+        postId: String(insertedPost.id),
         actorUserId: userId,
       },
       traceId,
     })
 
-    await deleteCachedValue('timeline', hashCacheKey(buildCacheKey([userId, 20, 0, null])))
+    const normalizedPost = await fetchNormalizedFeedPostById(supabase, String(insertedPost.id), userId)
 
     const timing = withServerTiming(startedAt)
     observeHistogram('feed.write.latency_ms', timing.durationMs, { operation: 'create_post' })
     logWithTrace({
       traceId,
       message: 'Post created and published',
-      tags: { userId, postId: String(post.id), durationMs: timing.durationMs },
+      tags: { userId, postId: String(insertedPost.id), durationMs: timing.durationMs, mediaCount: media.length },
     })
 
-    return NextResponse.json({ post }, { status: 201, headers: { 'X-Trace-Id': traceId } })
-  } catch (error) {
+    return NextResponse.json({ post: normalizedPost }, { status: 201, headers: { 'X-Trace-Id': traceId } })
+  } catch (error: any) {
     observeCounter('feed.write.errors.total', 1, { reason: 'unexpected' })
     logWithTrace({
       level: 'error',
@@ -355,6 +400,6 @@ export async function POST(request: Request) {
       traceId,
       error,
     })
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
   }
 }

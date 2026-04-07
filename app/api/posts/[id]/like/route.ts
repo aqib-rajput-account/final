@@ -5,6 +5,15 @@ import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { canUsersInteract, enforceMultiScopeThrottle } from '@/backend/safety/service'
 
+async function ensureInteractionAllowed(supabase: any, postId: string, userId: string) {
+  const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
+  if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
+    return false
+  }
+
+  return true
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: postId } = await params
@@ -32,29 +41,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
     }
 
-    const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).single()
-    if (post?.author_id && !(await canUsersInteract(supabase, userId, post.author_id))) {
+    const canInteract = await ensureInteractionAllowed(supabase, postId, userId)
+    if (!canInteract) {
       return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 
-    const { data: existingLike } = await supabase
-      .from('post_likes')
+    const { data: existingReaction } = await supabase
+      .from('reactions')
       .select('id')
       .eq('post_id', postId)
       .eq('user_id', userId)
-      .single()
+      .eq('reaction_type', 'like')
+      .maybeSingle()
 
-    if (existingLike) {
+    if (existingReaction) {
       return NextResponse.json({ error: 'Already liked' }, { status: 400 })
     }
 
-    const { error: likeError } = await supabase.from('post_likes').insert({
+    const { error: reactionError } = await supabase.from('reactions').insert({
       post_id: postId,
       user_id: userId,
+      reaction_type: 'like',
     })
 
-    if (likeError) {
-      return NextResponse.json({ error: likeError.message }, { status: 500 })
+    if (reactionError) {
+      return NextResponse.json({ error: reactionError.message }, { status: 500 })
     }
 
     const idempotencyKey = await resolveIdempotencyKey(request, `post-like:${userId}:${postId}`)
@@ -73,8 +84,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
 
     return NextResponse.json({ success: true, liked: true, actor_user_id: userId })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
   }
 }
 
@@ -105,7 +116,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       )
     }
 
-    const { error } = await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', userId)
+    const { error } = await supabase
+      .from('reactions')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+      .eq('reaction_type', 'like')
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -127,7 +143,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     })
 
     return NextResponse.json({ success: true, liked: false, actor_user_id: userId })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
   }
 }
