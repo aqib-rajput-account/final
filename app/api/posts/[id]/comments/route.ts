@@ -6,6 +6,7 @@ import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
 import { canUsersInteract, enforceMultiScopeThrottle, getMutedAndBlockedUserIds } from '@/backend/safety/service'
 import { canViewerAccessPost, fetchPostAccessRecordById } from '@/lib/feed-utils'
+import { createSupabaseAdmin } from '@/lib/supabase/admin'
 
 type NormalizedComment = {
   id: string
@@ -41,7 +42,14 @@ function normalizeCommentRow(row: Record<string, any>): NormalizedComment {
 }
 
 async function fetchComments(supabase: any, postId: string): Promise<NormalizedComment[]> {
-  const canonical = await supabase
+  let socialClient = supabase
+  try {
+    socialClient = createSupabaseAdmin()
+  } catch {
+    // fall back to the request-scoped client
+  }
+
+  const canonical = await socialClient
     .from('comments')
     .select(`
       *,
@@ -50,11 +58,7 @@ async function fetchComments(supabase: any, postId: string): Promise<NormalizedC
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
 
-  if (!canonical.error) {
-    return (canonical.data ?? []).map((row: Record<string, any>) => normalizeCommentRow(row))
-  }
-
-  const legacy = await supabase
+  const legacy = await socialClient
     .from('post_comments')
     .select(`
       *,
@@ -63,11 +67,15 @@ async function fetchComments(supabase: any, postId: string): Promise<NormalizedC
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
 
-  if (!legacy.error) {
-    return (legacy.data ?? []).map((row: Record<string, any>) => normalizeCommentRow(row))
-  }
+  const merged = [
+    ...(!canonical.error ? (canonical.data ?? []).map((row: Record<string, any>) => ({ ...normalizeCommentRow(row), _key: `comment:${row.id}` })) : []),
+    ...(!legacy.error ? (legacy.data ?? []).map((row: Record<string, any>) => ({ ...normalizeCommentRow(row), _key: `post_comment:${row.id}` })) : []),
+  ]
 
-  throw canonical.error
+  return merged
+    .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at))
+    .filter((comment, index, array) => array.findIndex((candidate) => candidate._key === comment._key) === index)
+    .map(({ _key, ...comment }) => comment)
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -137,7 +145,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Content is required' }, { status: 400 })
     }
 
-    const canonicalInsert = await supabase
+    let socialClient = supabase
+    try {
+      socialClient = createSupabaseAdmin()
+    } catch {
+      // fall back to the request-scoped client
+    }
+
+    const canonicalInsert = await socialClient
       .from('comments')
       .insert({
         post_id: postId,
@@ -154,7 +169,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     let commentError = canonicalInsert.error
 
     if (commentError) {
-      const legacyInsert = await supabase
+      const legacyInsert = await socialClient
         .from('post_comments')
         .insert({
           post_id: postId,

@@ -5,6 +5,7 @@ import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { canUsersInteract, enforceMultiScopeThrottle } from '@/backend/safety/service'
 import { canViewerAccessPost, fetchPostAccessRecordById } from '@/lib/feed-utils'
+import { createSupabaseAdmin } from '@/lib/supabase/admin'
 
 async function ensureInteractionAllowed(supabase: any, postId: string, userId: string) {
   const post = await fetchPostAccessRecordById(supabase, postId)
@@ -23,6 +24,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { id: postId } = await params
     const supabase = await createClient()
+    let socialClient = supabase
+    try {
+      socialClient = createSupabaseAdmin()
+    } catch {
+      // fall back to the request-scoped client
+    }
     const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
@@ -51,26 +58,41 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Interaction forbidden due to block settings' }, { status: 403 })
     }
 
-    const { data: existingReaction } = await supabase
+    const [{ data: existingReaction }, { data: existingLegacyLike }] = await Promise.all([
+      socialClient
       .from('reactions')
       .select('id')
       .eq('post_id', postId)
       .eq('user_id', userId)
       .eq('reaction_type', 'like')
-      .maybeSingle()
+      .maybeSingle(),
+      socialClient
+        .from('post_likes')
+        .select('id')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ])
 
-    if (existingReaction) {
+    if (existingReaction || existingLegacyLike) {
       return NextResponse.json({ error: 'Already liked' }, { status: 400 })
     }
 
-    const { error: reactionError } = await supabase.from('reactions').insert({
+    const { error: reactionError } = await socialClient.from('reactions').insert({
       post_id: postId,
       user_id: userId,
       reaction_type: 'like',
     })
 
     if (reactionError) {
-      return NextResponse.json({ error: reactionError.message }, { status: 500 })
+      const { error: legacyLikeError } = await socialClient.from('post_likes').insert({
+        post_id: postId,
+        user_id: userId,
+      })
+
+      if (legacyLikeError) {
+        return NextResponse.json({ error: reactionError.message || legacyLikeError.message }, { status: 500 })
+      }
     }
 
     const idempotencyKey = await resolveIdempotencyKey(request, `post-like:${userId}:${postId}`)
@@ -98,6 +120,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   try {
     const { id: postId } = await params
     const supabase = await createClient()
+    let socialClient = supabase
+    try {
+      socialClient = createSupabaseAdmin()
+    } catch {
+      // fall back to the request-scoped client
+    }
     const userId = await resolveAuthenticatedUserId(request)
 
     if (!userId) {
@@ -126,15 +154,22 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Interaction forbidden due to post visibility or block settings' }, { status: 403 })
     }
 
-    const { error } = await supabase
-      .from('reactions')
-      .delete()
-      .eq('post_id', postId)
-      .eq('user_id', userId)
-      .eq('reaction_type', 'like')
+    const [reactionDelete, legacyDelete] = await Promise.all([
+      socialClient
+        .from('reactions')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .eq('reaction_type', 'like'),
+      socialClient
+        .from('post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId),
+    ])
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (reactionDelete.error && legacyDelete.error) {
+      return NextResponse.json({ error: reactionDelete.error.message || legacyDelete.error.message }, { status: 500 })
     }
 
     const idempotencyKey = await resolveIdempotencyKey(request, `post-unlike:${userId}:${postId}`)

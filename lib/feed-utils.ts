@@ -1,4 +1,5 @@
 import { canViewerAccessPostRecord } from '@/lib/feed-visibility'
+import { createSupabaseAdmin } from '@/lib/supabase/admin'
 import {
   extractFeedAttachmentsFromMetadata,
   getPrimaryLegacyImageUrl,
@@ -87,11 +88,15 @@ function normalizeProfile(profile: unknown) {
   }
 }
 
-function mapCountRows(rows: Array<{ post_id: string | number }>) {
+function mapCountRows(rows: Array<{ post_id: string | number; dedupe_key?: string }>) {
   const counts = new Map<string, number>()
+  const seen = new Set<string>()
 
   for (const row of rows) {
     const postId = String(row.post_id)
+    const dedupeKey = row.dedupe_key ?? postId
+    if (seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
     counts.set(postId, (counts.get(postId) ?? 0) + 1)
   }
 
@@ -124,18 +129,79 @@ function buildFeedSearchHaystack(post: Record<string, unknown>) {
 async function fetchCommentRows(
   supabase: any,
   postIds: string[]
-): Promise<Array<{ post_id: string | number }>> {
-  const canonical = await supabase.from('comments').select('post_id').in('post_id', postIds)
+): Promise<Array<{ post_id: string | number; dedupe_key: string }>> {
+  let socialClient = supabase
+  try {
+    socialClient = createSupabaseAdmin()
+  } catch {
+    // fall back to the request-scoped client
+  }
+
+  const [canonical, legacy] = await Promise.all([
+    socialClient.from('comments').select('id, post_id').in('post_id', postIds),
+    socialClient.from('post_comments').select('id, post_id').in('post_id', postIds),
+  ])
+
+  const merged: Array<{ post_id: string | number; dedupe_key: string }> = []
+
   if (!canonical.error) {
-    return canonical.data ?? []
+    merged.push(
+      ...(canonical.data ?? []).map((row: { id: string | number; post_id: string | number }) => ({
+        post_id: row.post_id,
+        dedupe_key: `comment:${row.id}`,
+      }))
+    )
   }
 
-  const legacy = await supabase.from('post_comments').select('post_id').in('post_id', postIds)
   if (!legacy.error) {
-    return legacy.data ?? []
+    merged.push(
+      ...(legacy.data ?? []).map((row: { id: string | number; post_id: string | number }) => ({
+        post_id: row.post_id,
+        dedupe_key: `post_comment:${row.id}`,
+      }))
+    )
   }
 
-  return []
+  return merged
+}
+
+async function fetchLikeRows(
+  supabase: any,
+  postIds: string[]
+): Promise<Array<{ post_id: string | number; user_id: string | number; dedupe_key: string }>> {
+  let socialClient = supabase
+  try {
+    socialClient = createSupabaseAdmin()
+  } catch {
+    // fall back to the request-scoped client
+  }
+
+  const [canonical, legacy] = await Promise.all([
+    socialClient.from('reactions').select('post_id, user_id').in('post_id', postIds).eq('reaction_type', 'like'),
+    socialClient.from('post_likes').select('post_id, user_id').in('post_id', postIds),
+  ])
+
+  const merged: Array<{ post_id: string | number; user_id: string | number; dedupe_key: string }> = []
+
+  if (!canonical.error) {
+    merged.push(
+      ...(canonical.data ?? []).map((row: { post_id: string | number; user_id: string | number }) => ({
+        ...row,
+        dedupe_key: `like:${row.post_id}:${row.user_id}`,
+      }))
+    )
+  }
+
+  if (!legacy.error) {
+    merged.push(
+      ...(legacy.data ?? []).map((row: { post_id: string | number; user_id: string | number }) => ({
+        ...row,
+        dedupe_key: `like:${row.post_id}:${row.user_id}`,
+      }))
+    )
+  }
+
+  return merged
 }
 
 async function fetchPostMediaMap(supabase: any, postIds: string[]) {
@@ -346,7 +412,7 @@ export async function enrichFeedPosts(
   }
 
   const [reactionRowsResult, bookmarkRowsResult, commentRows, mediaByPostId] = await Promise.all([
-    supabase.from('reactions').select('post_id, user_id').in('post_id', postIds).eq('reaction_type', 'like'),
+    fetchLikeRows(supabase, postIds),
     viewerId
       ? supabase.from('post_bookmarks').select('post_id').in('post_id', postIds).eq('user_id', viewerId)
       : Promise.resolve({ data: [] as Array<{ post_id: string | number }>, error: null }),
@@ -354,7 +420,7 @@ export async function enrichFeedPosts(
     fetchPostMediaMap(supabase, postIds),
   ])
 
-  const reactionRows = reactionRowsResult.error ? [] : reactionRowsResult.data ?? []
+  const reactionRows = reactionRowsResult ?? []
   const bookmarkRows = bookmarkRowsResult.error ? [] : bookmarkRowsResult.data ?? []
 
   const likeCounts = mapCountRows(reactionRows)
