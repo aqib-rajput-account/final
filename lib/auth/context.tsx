@@ -137,17 +137,37 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSignedIn || !user?.id) return;
 
     const updateStatus = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return;
+      }
+
       try {
-        await fetch("/api/users/status", { method: "POST" });
+        await fetch("/api/users/status", { method: "POST", keepalive: true, cache: "no-store" });
       } catch (error) {
-        console.error("Error updating status:", error);
+        if (!(error instanceof TypeError)) {
+          console.error("Error updating status:", error);
+        }
       }
     };
 
     void updateStatus();
-    const interval = setInterval(updateStatus, 30000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void updateStatus();
+      }
+    };
 
-    return () => clearInterval(interval);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const interval = setInterval(updateStatus, 60000);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isSignedIn, user?.id]);
 
   useEffect(() => {

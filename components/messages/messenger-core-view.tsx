@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -200,9 +200,12 @@ export function MessengerCoreView() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingStopTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingUserTimeouts = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const conversationRefreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedConversationRefreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastNotifiedMessageId = useRef<string | null>(null);
   const windowFocused = useRef(true);
   const deepLinkHandled = useRef(false);
+  const deferredQuery = useDeferredValue(query);
 
   const selectedConversationName = selectedConversation ? getConversationName(selectedConversation, userId) : null;
   const totalUnread = useMemo(
@@ -279,7 +282,9 @@ export function MessengerCoreView() {
       throw new Error(payload.error || "Failed to load members");
     }
 
-    setMembers(payload.data ?? []);
+    startTransition(() => {
+      setMembers(payload.data ?? []);
+    });
   });
 
   const loadConversationDetail = useEffectEvent(async (conversationId: string) => {
@@ -289,18 +294,24 @@ export function MessengerCoreView() {
       throw new Error(payload.error || "Failed to load conversation");
     }
 
-    setSelectedConversation(payload.conversation);
-    setGroupRename(payload.conversation.name ?? "");
+    const conversation = payload.conversation;
+    startTransition(() => {
+      setSelectedConversation(conversation);
+      setGroupRename(conversation.name ?? "");
+    });
   });
 
-  const loadConversations = useEffectEvent(async () => {
+  const loadConversations = useEffectEvent(async (options?: { silent?: boolean }) => {
     if (!userId) return;
 
-    setLoadingConversations(true);
+    if (!options?.silent) {
+      setLoadingConversations(true);
+    }
     try {
       const search = new URLSearchParams();
       search.set("folder", filter);
-      if (query.trim()) search.set("q", query.trim());
+      const trimmedQuery = deferredQuery.trim();
+      if (trimmedQuery) search.set("q", trimmedQuery);
       search.set("limit", "40");
 
       const response = await fetch(`/api/conversations?${search.toString()}`, { cache: "no-store" });
@@ -310,26 +321,34 @@ export function MessengerCoreView() {
       }
 
       const items = payload.conversations ?? [];
-      setConversations(items);
+      startTransition(() => {
+        setConversations(items);
+        setSelectedConversationId((currentSelectedConversationId) => {
+          if (currentSelectedConversationId) {
+            const stillVisible = items.some((conversation) => conversation.id === currentSelectedConversationId);
+            return stillVisible ? currentSelectedConversationId : items[0]?.id ?? null;
+          }
 
-      if (selectedConversationId) {
-        const stillVisible = items.some((conversation) => conversation.id === selectedConversationId);
-        if (!stillVisible && !selectedConversation) {
-          setSelectedConversationId(items[0]?.id ?? null);
-        }
-      } else {
-        setSelectedConversationId(items[0]?.id ?? null);
-      }
+          return items[0]?.id ?? null;
+        });
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load conversations");
     } finally {
-      setLoadingConversations(false);
+      if (!options?.silent) {
+        setLoadingConversations(false);
+      }
     }
   });
 
   const markConversationRead = useEffectEvent(async (conversationId: string, nextMessages: MessagingMessage[]) => {
     const unreadMessageIds = nextMessages
-      .filter((message) => message.sender_id && message.sender_id !== userId)
+      .filter(
+        (message) =>
+          message.sender_id &&
+          message.sender_id !== userId &&
+          !message.read_by.some((receipt) => receipt.user_id === userId)
+      )
       .map((message) => message.id);
 
     if (unreadMessageIds.length === 0) return;
@@ -367,8 +386,10 @@ export function MessengerCoreView() {
       }
 
       const nextMessages = payload.messages ?? [];
-      setMessages((current) => (append ? mergeMessages(nextMessages, current) : nextMessages));
-      setNextMessageCursor(payload.next_cursor ?? null);
+      startTransition(() => {
+        setMessages((current) => (append ? mergeMessages(nextMessages, current) : nextMessages));
+        setNextMessageCursor(payload.next_cursor ?? null);
+      });
       void markConversationRead(conversationId, nextMessages);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load messages");
@@ -378,9 +399,11 @@ export function MessengerCoreView() {
   });
 
   const loadSearchResults = useEffectEvent(async () => {
-    const trimmed = query.trim();
+    const trimmed = deferredQuery.trim();
     if (trimmed.length < 2) {
-      setSearchHits([]);
+      startTransition(() => {
+        setSearchHits([]);
+      });
       return;
     }
 
@@ -392,7 +415,9 @@ export function MessengerCoreView() {
         throw new Error(payload.error || "Failed to search messages");
       }
 
-      setSearchHits(payload.messages ?? []);
+      startTransition(() => {
+        setSearchHits(payload.messages ?? []);
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to search messages");
     } finally {
@@ -418,6 +443,35 @@ export function MessengerCoreView() {
     setDetailsOpen(false);
     resetComposer();
   });
+
+  const scheduleConversationRefresh = useEffectEvent((delay = 180) => {
+    if (conversationRefreshTimeout.current) {
+      clearTimeout(conversationRefreshTimeout.current);
+    }
+
+    conversationRefreshTimeout.current = setTimeout(() => {
+      conversationRefreshTimeout.current = null;
+      void loadConversations({ silent: true });
+    }, delay);
+  });
+
+  const scheduleSelectedConversationRefresh = useEffectEvent(
+    (conversationId: string, options?: { delay?: number; includeDetail?: boolean }) => {
+      if (selectedConversationRefreshTimeout.current) {
+        clearTimeout(selectedConversationRefreshTimeout.current);
+      }
+
+      selectedConversationRefreshTimeout.current = setTimeout(() => {
+        selectedConversationRefreshTimeout.current = null;
+        if (options?.includeDetail) {
+          void Promise.all([loadConversationDetail(conversationId), loadMessages(conversationId)]);
+          return;
+        }
+
+        void loadMessages(conversationId);
+      }, options?.delay ?? 120);
+    }
+  );
 
   const uploadPendingAttachments = useEffectEvent(async () => {
     const uploaded: MessagingAttachment[] = [];
@@ -519,16 +573,20 @@ export function MessengerCoreView() {
 
   useEffect(() => {
     if (!userId) return;
-    void loadConversations();
     void loadMembers();
-  }, [userId, filter, query]);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void loadConversations();
+  }, [userId, filter, deferredQuery]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       void loadSearchResults();
     }, 250);
     return () => clearTimeout(timeout);
-  }, [query]);
+  }, [deferredQuery]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -559,8 +617,39 @@ export function MessengerCoreView() {
       return;
     }
 
+    const previewConversation = conversations.find((conversation) => conversation.id === selectedConversationId);
+    if (previewConversation) {
+      startTransition(() => {
+        setSelectedConversation((current) => {
+          if (
+            current?.id === previewConversation.id &&
+            current.participants.length > previewConversation.participants.length
+          ) {
+            return {
+              ...previewConversation,
+              participants: current.participants,
+            };
+          }
+
+          return previewConversation;
+        });
+        setGroupRename(previewConversation.name ?? "");
+      });
+    }
+
     void openConversation(selectedConversationId);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (conversationRefreshTimeout.current) {
+        clearTimeout(conversationRefreshTimeout.current);
+      }
+      if (selectedConversationRefreshTimeout.current) {
+        clearTimeout(selectedConversationRefreshTimeout.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (deepLinkHandled.current || !userId) return;
@@ -605,16 +694,22 @@ export function MessengerCoreView() {
     onChange: async (payload) => {
       const conversationId = String((payload.new as { conversation_id?: string } | null)?.conversation_id ?? (payload.old as { conversation_id?: string } | null)?.conversation_id ?? "");
       if (!conversationId) return;
+      const senderId = String((payload.new as { sender_id?: string } | null)?.sender_id ?? "");
+      const isOwnInsert = payload.eventType === "INSERT" && senderId === userId;
 
-      await loadConversations();
       if (selectedConversationId === conversationId) {
-        await Promise.all([loadConversationDetail(conversationId), loadMessages(conversationId)]);
+        if (!isOwnInsert) {
+          scheduleSelectedConversationRefresh(conversationId);
+        }
+        scheduleConversationRefresh();
+      } else {
+        scheduleConversationRefresh();
       }
 
       if (
         payload.eventType === "INSERT" &&
         selectedConversationId !== conversationId &&
-        String((payload.new as { sender_id?: string } | null)?.sender_id ?? "") !== userId
+        senderId !== userId
       ) {
         const messageId = String((payload.new as { id?: string } | null)?.id ?? "");
         if (messageId && messageId !== lastNotifiedMessageId.current) {
@@ -629,9 +724,10 @@ export function MessengerCoreView() {
     table: "conversation_participants",
     event: "*",
     enabled: Boolean(userId && supabase),
-    onChange: async () => {
-      await loadConversations();
-      if (selectedConversationId) {
+    onChange: async (payload) => {
+      const conversationId = String((payload.new as { conversation_id?: string } | null)?.conversation_id ?? (payload.old as { conversation_id?: string } | null)?.conversation_id ?? "");
+      scheduleConversationRefresh();
+      if (selectedConversationId && conversationId === selectedConversationId) {
         await loadConversationDetail(selectedConversationId);
       }
     },
@@ -643,7 +739,7 @@ export function MessengerCoreView() {
     enabled: Boolean(selectedConversationId && supabase),
     onChange: async () => {
       if (selectedConversationId) {
-        await loadMessages(selectedConversationId);
+        scheduleSelectedConversationRefresh(selectedConversationId, { delay: 90 });
       }
     },
   });
@@ -654,7 +750,7 @@ export function MessengerCoreView() {
     enabled: Boolean(selectedConversationId && supabase),
     onChange: async () => {
       if (selectedConversationId) {
-        await Promise.all([loadConversationDetail(selectedConversationId), loadMessages(selectedConversationId)]);
+        scheduleSelectedConversationRefresh(selectedConversationId, { delay: 90 });
       }
     },
   });
@@ -823,7 +919,7 @@ export function MessengerCoreView() {
         setSelectedConversation(payload.conversation);
       }
       resetComposer();
-      await loadConversations();
+      scheduleConversationRefresh(80);
     } catch (error) {
       setMessages((current) => current.filter((message) => message.id !== temporaryId));
       toast.error(error instanceof Error ? error.message : "Failed to send message");
@@ -904,7 +1000,7 @@ export function MessengerCoreView() {
         throw new Error(payload.error || "Failed to update group");
       }
       setSelectedConversation(payload.conversation);
-      await loadConversations();
+      scheduleConversationRefresh(80);
       toast.success("Conversation updated");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update conversation");
@@ -925,6 +1021,7 @@ export function MessengerCoreView() {
         throw new Error(payload.error || "Failed to add participant");
       }
       setSelectedConversation(payload.conversation);
+      scheduleConversationRefresh(80);
       toast.success("Participant added");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to add participant");
@@ -945,6 +1042,7 @@ export function MessengerCoreView() {
         throw new Error(payload.error || "Failed to update participant");
       }
       setSelectedConversation(payload.conversation);
+      scheduleConversationRefresh(80);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update participant");
     }
@@ -963,6 +1061,7 @@ export function MessengerCoreView() {
         throw new Error(payload.error || "Failed to remove participant");
       }
       setSelectedConversation(payload.conversation);
+      scheduleConversationRefresh(80);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to remove participant");
     }
