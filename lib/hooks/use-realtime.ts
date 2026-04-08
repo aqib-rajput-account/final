@@ -30,7 +30,14 @@ export function useRealtimeSubscription<T extends Record<string, any> = any>({
   enabled = true,
 }: UseRealtimeSubscriptionOptions<T>) {
   const channelRef = useRef<RealtimeChannel | null>(null)
-  const supabase = createClient()
+  const callbacksRef = useRef({ onInsert, onUpdate, onDelete, onChange })
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+
+  callbacksRef.current = { onInsert, onUpdate, onDelete, onChange }
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient()
+  }
+  const supabase = supabaseRef.current
 
   useEffect(() => {
     if (!enabled) return
@@ -51,19 +58,21 @@ export function useRealtimeSubscription<T extends Record<string, any> = any>({
         'postgres_changes',
         channelConfig,
         (payload: RealtimePostgresChangesPayload<T>) => {
-          if (onChange) {
-            onChange(payload)
+          if (callbacksRef.current.onChange) {
+            callbacksRef.current.onChange(payload)
           }
 
           switch (payload.eventType) {
             case 'INSERT':
-              if (onInsert) onInsert(payload.new as T)
+              if (callbacksRef.current.onInsert) callbacksRef.current.onInsert(payload.new as T)
               break
             case 'UPDATE':
-              if (onUpdate) onUpdate({ old: payload.old as T, new: payload.new as T })
+              if (callbacksRef.current.onUpdate) {
+                callbacksRef.current.onUpdate({ old: payload.old as T, new: payload.new as T })
+              }
               break
             case 'DELETE':
-              if (onDelete) onDelete(payload.old as T)
+              if (callbacksRef.current.onDelete) callbacksRef.current.onDelete(payload.old as T)
               break
           }
         }
@@ -77,7 +86,7 @@ export function useRealtimeSubscription<T extends Record<string, any> = any>({
         supabase.removeChannel(channelRef.current)
       }
     }
-  }, [table, schema, event, filter, enabled, onInsert, onUpdate, onDelete, onChange, supabase])
+  }, [table, schema, event, filter, enabled, supabase])
 
   return channelRef.current
 }
@@ -111,7 +120,14 @@ export function usePresence({
   enabled = true,
 }: UsePresenceOptions) {
   const channelRef = useRef<RealtimeChannel | null>(null)
-  const supabase = createClient()
+  const callbacksRef = useRef({ onSync, onJoin, onLeave, userInfo })
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+
+  callbacksRef.current = { onSync, onJoin, onLeave, userInfo }
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient()
+  }
+  const supabase = supabaseRef.current
 
   useEffect(() => {
     if (!enabled || !userId) return
@@ -127,20 +143,20 @@ export function usePresence({
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState() as PresenceState
-        if (onSync) onSync(state)
+        if (callbacksRef.current.onSync) callbacksRef.current.onSync(state)
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }: { key: string; newPresences: any[] }) => {
-        if (onJoin) onJoin(key, newPresences)
+        if (callbacksRef.current.onJoin) callbacksRef.current.onJoin(key, newPresences)
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }: { key: string; leftPresences: any[] }) => {
-        if (onLeave) onLeave(key, leftPresences)
+        if (callbacksRef.current.onLeave) callbacksRef.current.onLeave(key, leftPresences)
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({
             user_id: userId,
             online_at: new Date().toISOString(),
-            ...userInfo,
+            ...callbacksRef.current.userInfo,
           })
         }
       })
@@ -152,7 +168,7 @@ export function usePresence({
         supabase.removeChannel(channelRef.current)
       }
     }
-  }, [channelName, userId, enabled, onSync, onJoin, onLeave, supabase, userInfo])
+  }, [channelName, userId, enabled, supabase])
 
   return channelRef.current
 }
@@ -172,7 +188,14 @@ export function useBroadcast({
   enabled = true,
 }: UseBroadcastOptions) {
   const channelRef = useRef<RealtimeChannel | null>(null)
-  const supabase = createClient()
+  const onMessageRef = useRef(onMessage)
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+
+  onMessageRef.current = onMessage
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient()
+  }
+  const supabase = supabaseRef.current
 
   const send = useCallback(
     async (payload: any) => {
@@ -193,7 +216,7 @@ export function useBroadcast({
     const channel = supabase
       .channel(channelName)
       .on('broadcast', { event: eventName }, ({ payload }: { payload: any }) => {
-        if (onMessage) onMessage(payload)
+        if (onMessageRef.current) onMessageRef.current(payload)
       })
       .subscribe()
 
@@ -204,7 +227,7 @@ export function useBroadcast({
         supabase.removeChannel(channelRef.current)
       }
     }
-  }, [channelName, eventName, enabled, onMessage, supabase])
+  }, [channelName, eventName, enabled, supabase])
 
   return { send, channel: channelRef.current }
 }

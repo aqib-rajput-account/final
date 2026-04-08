@@ -414,7 +414,6 @@ export function MessengerCoreView() {
   };
 
   const openConversation = useEffectEvent(async (conversationId: string) => {
-    setSelectedConversationId(conversationId);
     await Promise.all([loadConversationDetail(conversationId), loadMessages(conversationId)]);
     setDetailsOpen(false);
     resetComposer();
@@ -522,14 +521,14 @@ export function MessengerCoreView() {
     if (!userId) return;
     void loadConversations();
     void loadMembers();
-  }, [userId, filter, loadConversations, loadMembers]);
+  }, [userId, filter, query]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       void loadSearchResults();
     }, 250);
     return () => clearTimeout(timeout);
-  }, [query, loadSearchResults]);
+  }, [query]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -554,14 +553,14 @@ export function MessengerCoreView() {
 
   useEffect(() => {
     if (!selectedConversationId) {
-      setSelectedConversation(null);
-      setMessages([]);
-      setNextMessageCursor(null);
+      setSelectedConversation((current) => (current ? null : current));
+      setMessages((current) => (current.length > 0 ? [] : current));
+      setNextMessageCursor((current) => (current ? null : current));
       return;
     }
 
     void openConversation(selectedConversationId);
-  }, [selectedConversationId, openConversation]);
+  }, [selectedConversationId]);
 
   useEffect(() => {
     if (deepLinkHandled.current || !userId) return;

@@ -1042,30 +1042,55 @@ export async function markMessagesRead(args: {
     return hydrateConversation(args.supabase, args.userId, access.conversation, access.participantRows)
   }
 
+  const { data: existingReads, error: existingReadsError } = await args.supabase
+    .from('message_reads')
+    .select('message_id')
+    .eq('user_id', args.userId)
+    .in('message_id', validMessages.map((message) => message.id))
+
+  if (existingReadsError) {
+    throw new MessagingError('Failed to mark messages as read', 500, 'read_existing_lookup_failed')
+  }
+
+  const existingReadIds = new Set(
+    ((existingReads ?? []) as Array<{ message_id: string | null }>).flatMap((row) =>
+      row.message_id ? [row.message_id] : []
+    )
+  )
+  const unreadMessages = validMessages.filter((message) => !existingReadIds.has(message.id))
+
+  if (unreadMessages.length === 0) {
+    return hydrateConversation(args.supabase, args.userId, access.conversation)
+  }
+
   const { error: readError } = await args.supabase.from('message_reads').upsert(
-    validMessages.map((message) => ({
+    unreadMessages.map((message) => ({
       message_id: message.id,
       user_id: args.userId,
       read_at: new Date().toISOString(),
     })),
-    { onConflict: 'message_id,user_id', ignoreDuplicates: false }
+    { onConflict: 'message_id,user_id', ignoreDuplicates: true }
   )
 
   if (readError) {
     throw new MessagingError('Failed to mark messages as read', 500, 'read_insert_failed')
   }
 
-  const latestMessage = [...validMessages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
-  await args.supabase
-    .from('conversation_participants')
-    .update({
-      last_read_at: latestMessage.created_at,
-      last_read_message_id: latestMessage.id,
-    })
-    .eq('conversation_id', args.conversationId)
-    .eq('user_id', args.userId)
+  const latestUnreadMessage = [...unreadMessages].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
+  const currentLastReadAt = access.viewerParticipant.last_read_at ? Date.parse(access.viewerParticipant.last_read_at) : 0
 
-  return hydrateConversation(args.supabase, args.userId, access.conversation, access.participantRows)
+  if (latestUnreadMessage && Date.parse(latestUnreadMessage.created_at) > currentLastReadAt) {
+    await args.supabase
+      .from('conversation_participants')
+      .update({
+        last_read_at: latestUnreadMessage.created_at,
+        last_read_message_id: latestUnreadMessage.id,
+      })
+      .eq('conversation_id', args.conversationId)
+      .eq('user_id', args.userId)
+  }
+
+  return hydrateConversation(args.supabase, args.userId, access.conversation)
 }
 
 async function updateParticipantState(args: {
