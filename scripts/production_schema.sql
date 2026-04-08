@@ -450,13 +450,19 @@ CREATE TABLE IF NOT EXISTS public.conversation_participants (
   user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   role TEXT DEFAULT 'member' CHECK (role IN ('admin', 'member')),
   last_read_at TIMESTAMPTZ DEFAULT now(),
+  last_read_message_id UUID,
+  folder TEXT DEFAULT 'primary' CHECK (folder IN ('primary', 'requests', 'archived')),
+  membership_state TEXT DEFAULT 'active' CHECK (membership_state IN ('requested', 'active', 'left', 'removed')),
   is_muted BOOLEAN DEFAULT false,
+  archived_at TIMESTAMPTZ,
   joined_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(conversation_id, user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conv_participants_user ON public.conversation_participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_conv_participants_conv ON public.conversation_participants(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conv_participants_user_folder_state ON public.conversation_participants(user_id, folder, membership_state, joined_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conv_participants_last_read_message ON public.conversation_participants(last_read_message_id);
 
 ALTER TABLE public.conversation_participants ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "conv_participants_select" ON public.conversation_participants;
@@ -498,6 +504,12 @@ CREATE POLICY "messages_insert" ON public.messages FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "messages_update" ON public.messages;
 CREATE POLICY "messages_update" ON public.messages FOR UPDATE USING (true);
 
+ALTER TABLE public.conversation_participants
+  DROP CONSTRAINT IF EXISTS conversation_participants_last_read_message_id_fkey;
+ALTER TABLE public.conversation_participants
+  ADD CONSTRAINT conversation_participants_last_read_message_id_fkey
+  FOREIGN KEY (last_read_message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
 
 -- =====================
 -- 17. MESSAGE READS
@@ -518,13 +530,72 @@ CREATE POLICY "message_reads_insert" ON public.message_reads FOR INSERT WITH CHE
 
 
 -- =====================
+-- 18. MESSAGE ATTACHMENTS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.message_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('image', 'video', 'file')),
+  url TEXT NOT NULL,
+  pathname TEXT,
+  mime_type TEXT,
+  name TEXT,
+  size BIGINT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_attachments_message_sort ON public.message_attachments(message_id, sort_order, created_at);
+
+ALTER TABLE public.message_attachments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "message_attachments_select" ON public.message_attachments;
+CREATE POLICY "message_attachments_select" ON public.message_attachments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "message_attachments_insert" ON public.message_attachments;
+CREATE POLICY "message_attachments_insert" ON public.message_attachments FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "message_attachments_update" ON public.message_attachments;
+CREATE POLICY "message_attachments_update" ON public.message_attachments FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "message_attachments_delete" ON public.message_attachments;
+CREATE POLICY "message_attachments_delete" ON public.message_attachments FOR DELETE USING (true);
+
+
+-- =====================
+-- 19. MESSAGE REACTIONS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.message_reactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(message_id, user_id, emoji)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_reactions_message_created ON public.message_reactions(message_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_reactions_user_message ON public.message_reactions(user_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_message_reads_message_user ON public.message_reads(message_id, user_id);
+
+ALTER TABLE public.message_reactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "message_reactions_select" ON public.message_reactions;
+CREATE POLICY "message_reactions_select" ON public.message_reactions FOR SELECT USING (true);
+DROP POLICY IF EXISTS "message_reactions_insert" ON public.message_reactions;
+CREATE POLICY "message_reactions_insert" ON public.message_reactions FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "message_reactions_delete" ON public.message_reactions;
+CREATE POLICY "message_reactions_delete" ON public.message_reactions FOR DELETE USING (true);
+
+
+-- =====================
 -- ENABLE REALTIME
 -- =====================
 DROP PUBLICATION IF EXISTS supabase_realtime;
 CREATE PUBLICATION supabase_realtime FOR TABLE
   public.posts,
   public.profiles,
+  public.conversations,
+  public.conversation_participants,
   public.messages,
+  public.message_attachments,
+  public.message_reactions,
+  public.message_reads,
   public.post_likes,
   public.post_comments,
   public.user_follows;
