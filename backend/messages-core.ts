@@ -462,10 +462,14 @@ async function hydrateConversation(
   supabase: SupabaseLike,
   viewerUserId: string,
   conversation: ConversationRow,
-  participantRows?: ParticipantRow[]
+  participantRows?: ParticipantRow[],
+  options?: {
+    profileMap?: Map<string, MessagingProfile>
+    viewerRole?: string
+  }
 ) {
   const rows = participantRows ?? (await getParticipantRowsForConversation(supabase, conversation.id))
-  const profileMap = await getProfileMap(supabase, rows.map((row) => row.user_id))
+  const profileMap = options?.profileMap ?? (await getProfileMap(supabase, rows.map((row) => row.user_id)))
   const participants = rows.map((row) => mapParticipant(row, profileMap))
   const viewerParticipant = participants.find((participant) => participant.user_id === viewerUserId)
 
@@ -484,7 +488,7 @@ async function hydrateConversation(
       .limit(1)
       .maybeSingle(),
     getUnreadCount(supabase, conversation.id, viewerUserId, viewerParticipant),
-    getViewerRole(supabase, viewerUserId),
+    Promise.resolve(options?.viewerRole ?? null).then((role) => role ?? getViewerRole(supabase, viewerUserId)),
   ])
 
   if (lastMessageResult.error) {
@@ -737,18 +741,37 @@ export async function listConversations(args: {
     throw new MessagingError('Failed to load conversations', 500, 'conversation_list_failed')
   }
 
+  const { data: allParticipantData, error: allParticipantError } = await args.supabase
+    .from('conversation_participants')
+    .select(
+      'id, conversation_id, user_id, role, folder, membership_state, last_read_at, last_read_message_id, is_muted, archived_at, joined_at'
+    )
+    .in('conversation_id', conversationIds)
+    .neq('membership_state', 'removed')
+
+  if (allParticipantError) {
+    throw new MessagingError('Failed to load conversations', 500, 'conversation_list_failed')
+  }
+
+  const allParticipantRows = (allParticipantData ?? []) as ParticipantRow[]
   const groupedParticipantRows = new Map<string, ParticipantRow[]>()
-  for (const row of participantRows) {
+  for (const row of allParticipantRows) {
     const current = groupedParticipantRows.get(row.conversation_id) ?? []
     current.push(row)
     groupedParticipantRows.set(row.conversation_id, current)
   }
 
+  const viewerRole = await getViewerRole(args.supabase, args.userId)
+  const profileMap = await getProfileMap(args.supabase, allParticipantRows.map((row) => row.user_id))
+
   const hydrated = await Promise.all(
     ((conversationData ?? []) as ConversationRow[])
       .filter((conversation) => matchesCursor(conversation.updated_at, args.cursor))
       .map((conversation) =>
-        hydrateConversation(args.supabase, args.userId, conversation, groupedParticipantRows.get(conversation.id) ?? [])
+        hydrateConversation(args.supabase, args.userId, conversation, groupedParticipantRows.get(conversation.id) ?? [], {
+          profileMap,
+          viewerRole,
+        })
       )
   )
 
@@ -1487,6 +1510,17 @@ async function getMessageRow(args: { supabase: SupabaseLike; messageId: string }
 
   assert(data, 'Message not found', 404, 'message_not_found')
   return data as MessageRow
+}
+
+export async function getMessage(args: {
+  supabase: SupabaseLike
+  userId: string
+  messageId: string
+}) {
+  const message = await getMessageRow({ supabase: args.supabase, messageId: args.messageId })
+  await ensureConversationAccess(args.supabase, message.conversation_id, args.userId)
+  const hydrated = await hydrateMessages(args.supabase, args.userId, [message])
+  return hydrated[0]
 }
 
 export async function updateMessage(args: {

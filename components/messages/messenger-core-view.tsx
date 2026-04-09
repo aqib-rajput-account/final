@@ -145,6 +145,78 @@ function mergeMessages(existing: MessagingMessage[], incoming: MessagingMessage[
   return [...map.values()].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 }
 
+function mergeReadReceipts(
+  existing: MessagingMessage["read_by"],
+  incoming: { user_id: string; read_at: string }
+) {
+  const next = [...existing];
+  const existingIndex = next.findIndex((receipt) => receipt.user_id === incoming.user_id);
+
+  if (existingIndex >= 0) {
+    next[existingIndex] = incoming;
+  } else {
+    next.push(incoming);
+  }
+
+  return next.sort((a, b) => Date.parse(a.read_at) - Date.parse(b.read_at));
+}
+
+function updateReactionSummaries(
+  existing: MessagingMessage["reactions"],
+  incoming: { emoji: string; userId: string; viewerUserId: string; remove?: boolean }
+) {
+  const next = existing.map((reaction) => ({
+    ...reaction,
+    user_ids: [...reaction.user_ids],
+  }));
+  const reactionIndex = next.findIndex((reaction) => reaction.emoji === incoming.emoji);
+
+  if (incoming.remove) {
+    if (reactionIndex < 0) return next;
+
+    const reaction = next[reactionIndex];
+    const userIds = reaction.user_ids.filter((userId) => userId !== incoming.userId);
+    if (userIds.length === 0) {
+      next.splice(reactionIndex, 1);
+      return next;
+    }
+
+    next[reactionIndex] = {
+      ...reaction,
+      count: userIds.length,
+      reacted: userIds.includes(incoming.viewerUserId),
+      user_ids: userIds,
+    };
+    return next;
+  }
+
+  if (reactionIndex < 0) {
+    return [
+      ...next,
+      {
+        emoji: incoming.emoji,
+        count: 1,
+        reacted: incoming.userId === incoming.viewerUserId,
+        user_ids: [incoming.userId],
+      },
+    ];
+  }
+
+  const reaction = next[reactionIndex];
+  if (reaction.user_ids.includes(incoming.userId)) {
+    return next;
+  }
+
+  const userIds = [...reaction.user_ids, incoming.userId];
+  next[reactionIndex] = {
+    ...reaction,
+    count: userIds.length,
+    reacted: userIds.includes(incoming.viewerUserId),
+    user_ids: userIds,
+  };
+  return next;
+}
+
 function coerceAttachmentKind(file: File): PendingAttachment["kind"] {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
@@ -201,7 +273,6 @@ export function MessengerCoreView() {
   const typingStopTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingUserTimeouts = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const conversationRefreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const selectedConversationRefreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastNotifiedMessageId = useRef<string | null>(null);
   const windowFocused = useRef(true);
   const deepLinkHandled = useRef(false);
@@ -287,24 +358,31 @@ export function MessengerCoreView() {
     });
   });
 
-  const loadConversationDetail = useEffectEvent(async (conversationId: string) => {
-    const response = await fetch(`/api/conversations/${conversationId}`, { cache: "no-store" });
-    const payload = (await response.json()) as { conversation?: MessagingConversation; error?: string };
-    if (!response.ok || !payload.conversation) {
-      throw new Error(payload.error || "Failed to load conversation");
-    }
+  const loadConversationDetail = useEffectEvent(async (conversationId: string, options?: { silent?: boolean }) => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, { cache: "no-store" });
+      const payload = (await response.json()) as { conversation?: MessagingConversation; error?: string };
+      if (!response.ok || !payload.conversation) {
+        throw new Error(payload.error || "Failed to load conversation");
+      }
 
-    const conversation = payload.conversation;
-    startTransition(() => {
-      setSelectedConversation(conversation);
-      setGroupRename(conversation.name ?? "");
-    });
+      const conversation = payload.conversation;
+      startTransition(() => {
+        setSelectedConversation(conversation);
+        setGroupRename(conversation.name ?? "");
+      });
+    } catch (error) {
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Failed to load conversation");
+      }
+    }
   });
 
   const loadConversations = useEffectEvent(async (options?: { silent?: boolean }) => {
     if (!userId) return;
 
-    if (!options?.silent) {
+    const shouldShowLoading = !options?.silent && conversations.length === 0;
+    if (shouldShowLoading) {
       setLoadingConversations(true);
     }
     try {
@@ -333,9 +411,11 @@ export function MessengerCoreView() {
         });
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load conversations");
-    } finally {
       if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Failed to load conversations");
+      }
+    } finally {
+      if (shouldShowLoading) {
         setLoadingConversations(false);
       }
     }
@@ -364,10 +444,19 @@ export function MessengerCoreView() {
     }
   });
 
-  const loadMessages = useEffectEvent(async (conversationId: string, cursor?: string | null, append = false) => {
-    setLoadingMessages(!append);
+  const loadMessages = useEffectEvent(
+    async (
+      conversationId: string,
+      cursor?: string | null,
+      append = false,
+      options?: { silent?: boolean; syncRead?: boolean }
+    ) => {
+      const shouldShowLoading = !append && !options?.silent && messages.length === 0;
+      if (shouldShowLoading) {
+        setLoadingMessages(true);
+      }
 
-    try {
+      try {
       const search = new URLSearchParams();
       search.set("limit", "30");
       if (cursor) search.set("cursor", cursor);
@@ -390,11 +479,36 @@ export function MessengerCoreView() {
         setMessages((current) => (append ? mergeMessages(nextMessages, current) : nextMessages));
         setNextMessageCursor(payload.next_cursor ?? null);
       });
-      void markConversationRead(conversationId, nextMessages);
+      if (options?.syncRead !== false) {
+        void markConversationRead(conversationId, nextMessages);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load messages");
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Failed to load messages");
+      }
     } finally {
-      setLoadingMessages(false);
+      if (shouldShowLoading) {
+        setLoadingMessages(false);
+      }
+    }
+    }
+  );
+
+  const loadMessageById = useEffectEvent(async (messageId: string, options?: { silent?: boolean }) => {
+    try {
+      const response = await fetch(`/api/messages/detail?id=${encodeURIComponent(messageId)}`, { cache: "no-store" });
+      const payload = (await response.json()) as { message?: MessagingMessage; error?: string };
+      if (!response.ok || !payload.message) {
+        throw new Error(payload.error || "Failed to load message");
+      }
+
+      startTransition(() => {
+        setMessages((current) => mergeMessages(current, [payload.message!]));
+      });
+    } catch (error) {
+      if (!options?.silent) {
+        toast.error(error instanceof Error ? error.message : "Failed to load message");
+      }
     }
   });
 
@@ -454,24 +568,6 @@ export function MessengerCoreView() {
       void loadConversations({ silent: true });
     }, delay);
   });
-
-  const scheduleSelectedConversationRefresh = useEffectEvent(
-    (conversationId: string, options?: { delay?: number; includeDetail?: boolean }) => {
-      if (selectedConversationRefreshTimeout.current) {
-        clearTimeout(selectedConversationRefreshTimeout.current);
-      }
-
-      selectedConversationRefreshTimeout.current = setTimeout(() => {
-        selectedConversationRefreshTimeout.current = null;
-        if (options?.includeDetail) {
-          void Promise.all([loadConversationDetail(conversationId), loadMessages(conversationId)]);
-          return;
-        }
-
-        void loadMessages(conversationId);
-      }, options?.delay ?? 120);
-    }
-  );
 
   const uploadPendingAttachments = useEffectEvent(async () => {
     const uploaded: MessagingAttachment[] = [];
@@ -573,8 +669,23 @@ export function MessengerCoreView() {
 
   useEffect(() => {
     if (!userId) return;
+    const needsMembers =
+      showNewConversation ||
+      (detailsOpen &&
+        selectedConversation?.type === "group" &&
+        selectedConversation.viewer_participation.role === "admin");
+
+    if (!needsMembers || members.length > 0) return;
     void loadMembers();
-  }, [userId]);
+  }, [
+    userId,
+    showNewConversation,
+    detailsOpen,
+    members.length,
+    selectedConversation?.id,
+    selectedConversation?.type,
+    selectedConversation?.viewer_participation.role,
+  ]);
 
   useEffect(() => {
     if (!userId) return;
@@ -645,9 +756,6 @@ export function MessengerCoreView() {
       if (conversationRefreshTimeout.current) {
         clearTimeout(conversationRefreshTimeout.current);
       }
-      if (selectedConversationRefreshTimeout.current) {
-        clearTimeout(selectedConversationRefreshTimeout.current);
-      }
     };
   }, []);
 
@@ -694,12 +802,13 @@ export function MessengerCoreView() {
     onChange: async (payload) => {
       const conversationId = String((payload.new as { conversation_id?: string } | null)?.conversation_id ?? (payload.old as { conversation_id?: string } | null)?.conversation_id ?? "");
       if (!conversationId) return;
+      const messageId = String((payload.new as { id?: string } | null)?.id ?? (payload.old as { id?: string } | null)?.id ?? "");
       const senderId = String((payload.new as { sender_id?: string } | null)?.sender_id ?? "");
       const isOwnInsert = payload.eventType === "INSERT" && senderId === userId;
 
       if (selectedConversationId === conversationId) {
-        if (!isOwnInsert) {
-          scheduleSelectedConversationRefresh(conversationId);
+        if (!isOwnInsert && messageId) {
+          void loadMessageById(messageId, { silent: true });
         }
         scheduleConversationRefresh();
       } else {
@@ -711,7 +820,6 @@ export function MessengerCoreView() {
         selectedConversationId !== conversationId &&
         senderId !== userId
       ) {
-        const messageId = String((payload.new as { id?: string } | null)?.id ?? "");
         if (messageId && messageId !== lastNotifiedMessageId.current) {
           lastNotifiedMessageId.current = messageId;
           toast.info("New message received");
@@ -728,7 +836,7 @@ export function MessengerCoreView() {
       const conversationId = String((payload.new as { conversation_id?: string } | null)?.conversation_id ?? (payload.old as { conversation_id?: string } | null)?.conversation_id ?? "");
       scheduleConversationRefresh();
       if (selectedConversationId && conversationId === selectedConversationId) {
-        await loadConversationDetail(selectedConversationId);
+        await loadConversationDetail(selectedConversationId, { silent: true });
       }
     },
   });
@@ -737,10 +845,30 @@ export function MessengerCoreView() {
     table: "message_reactions",
     event: "*",
     enabled: Boolean(selectedConversationId && supabase),
-    onChange: async () => {
-      if (selectedConversationId) {
-        scheduleSelectedConversationRefresh(selectedConversationId, { delay: 90 });
-      }
+    onChange: async (payload) => {
+      const source = (payload.new as { message_id?: string; user_id?: string; emoji?: string } | null) ?? (payload.old as { message_id?: string; user_id?: string; emoji?: string } | null);
+      const messageId = String(source?.message_id ?? "");
+      const reactionUserId = String(source?.user_id ?? "");
+      const emoji = String(source?.emoji ?? "");
+      if (!messageId || !reactionUserId || !emoji || !userId) return;
+
+      startTransition(() => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  reactions: updateReactionSummaries(message.reactions, {
+                    emoji,
+                    userId: reactionUserId,
+                    viewerUserId: userId,
+                    remove: payload.eventType === "DELETE",
+                  }),
+                }
+              : message
+          )
+        );
+      });
     },
   });
 
@@ -748,9 +876,28 @@ export function MessengerCoreView() {
     table: "message_reads",
     event: "*",
     enabled: Boolean(selectedConversationId && supabase),
-    onChange: async () => {
-      if (selectedConversationId) {
-        scheduleSelectedConversationRefresh(selectedConversationId, { delay: 90 });
+    onChange: async (payload) => {
+      const source = (payload.new as { message_id?: string; user_id?: string; read_at?: string } | null) ?? (payload.old as { message_id?: string; user_id?: string; read_at?: string } | null);
+      const messageId = String(source?.message_id ?? "");
+      const readUserId = String(source?.user_id ?? "");
+      const readAt = String(source?.read_at ?? "");
+      if (!messageId || !readUserId || !readAt) return;
+
+      startTransition(() => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  read_by: mergeReadReceipts(message.read_by, { user_id: readUserId, read_at: readAt }),
+                }
+              : message
+          )
+        );
+      });
+
+      if (readUserId === userId) {
+        scheduleConversationRefresh(140);
       }
     },
   });
