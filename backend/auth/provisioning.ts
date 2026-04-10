@@ -324,12 +324,29 @@ export async function provisionMemberAccount(args: {
 }) {
   const supabase = createSupabaseAdmin();
   const clerk = await clerkClient();
-  const clerkUser = (await clerk.users.getUser(args.userId)) as ClerkUserLike;
+
+  // 1. Fetch Clerk User with Resilience
+  let clerkUser: ClerkUserLike;
+  try {
+    clerkUser = (await clerk.users.getUser(args.userId)) as ClerkUserLike;
+  } catch (error) {
+    console.error("Clerk user fetch failed in provisioning:", error);
+    // If we can't fetch the user from Clerk, we can't reliably provision.
+    // However, if we're hitting a 403 or network issue, an Internal Server Error is better than a crash.
+    throw new ProvisioningError(
+      "Our identity service is temporarily unavailable. Please try again in a few moments.",
+      503
+    );
+  }
+
   const defaults = deriveClerkDefaults(clerkUser);
 
+  // 2. Fetch Existing Profile
   const { data: existingProfile, error: existingProfileError } = await supabase
     .from("profiles")
-    .select("id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, created_at, updated_at")
+    .select(
+      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, locale, metadata, created_at, updated_at"
+    )
     .eq("id", args.userId)
     .maybeSingle();
 
@@ -350,6 +367,7 @@ export async function provisionMemberAccount(args: {
     suggestedUsername,
   });
 
+  // 3. Prepare Payload
   const nextProfilePayload = {
     id: args.userId,
     email: defaults.email ?? profile?.email ?? null,
@@ -375,10 +393,13 @@ export async function provisionMemberAccount(args: {
     updated_at: new Date().toISOString(),
   };
 
+  // 4. Perform Upsert
   const { data: provisionedProfile, error: upsertError } = await supabase
     .from("profiles")
     .upsert(nextProfilePayload, { onConflict: "id" })
-    .select("id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, created_at, updated_at")
+    .select(
+      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, locale, metadata, created_at, updated_at"
+    )
     .single();
 
   if (upsertError || !provisionedProfile) {
@@ -389,6 +410,7 @@ export async function provisionMemberAccount(args: {
     throw new ProvisioningError(upsertError?.message || "Failed to provision profile");
   }
 
+  // 5. Assign Organization (Non-Blocking)
   let organizationInfo = {
     organizationName: DEFAULT_ORG_NAME,
     orgRole: DEFAULT_ORG_ROLE,
@@ -397,15 +419,16 @@ export async function provisionMemberAccount(args: {
   try {
     organizationInfo = await ensureDefaultOrganization(clerk, args.userId);
   } catch (error) {
-    console.error("Failed to assign default organization (non-blocking):", error);
+    console.warn("Failed to assign default organization (non-blocking):", error);
   }
 
   const normalizedProfile = provisionedProfile as ProvisionedProfile;
 
   return {
     profile: normalizedProfile,
-    suggestedUsername:
-      isNonEmptyString(normalizedProfile.username) ? normalizedProfile.username : suggestedUsername,
+    suggestedUsername: isNonEmptyString(normalizedProfile.username)
+      ? normalizedProfile.username
+      : suggestedUsername,
     needsOnboarding: !isNonEmptyString(normalizedProfile.username),
     defaultOrgName: organizationInfo.organizationName,
     orgRole: organizationInfo.orgRole,
@@ -414,6 +437,7 @@ export async function provisionMemberAccount(args: {
 
 export async function ensureUserProfileExists(userId: string) {
   const supabase = createSupabaseAdmin();
+
   const { data, error } = await supabase
     .from("profiles")
     .select("id")
@@ -425,9 +449,10 @@ export async function ensureUserProfileExists(userId: string) {
   }
 
   if (data?.id) {
-    return data.id;
+    return;
   }
 
+  // Self-heal: Provision if missing
   await provisionMemberAccount({ userId });
   return userId;
 }
