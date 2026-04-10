@@ -2,10 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/nextjs";
-import { createClient } from "@/lib/supabase/client";
-import { hasClerkPublishableKey, hasFullAuthConfig, hasSupabaseBrowserEnv } from "@/lib/config";
-import { normalizeClerkRole } from "./clerk-rbac";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
+import {
+  hasClerkPublishableKey,
+  hasFullAuthConfig,
+  hasSupabaseBrowserEnv,
+} from "@/lib/config";
+import { normalizeClerkRole } from "./clerk-rbac";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -36,12 +40,24 @@ export interface Profile {
   updated_at: string;
 }
 
+type ProvisioningResponse = {
+  profile: Profile | null;
+  suggestedUsername: string | null;
+  needsOnboarding: boolean;
+  defaultOrgName: string;
+  orgRole: string;
+};
+
+type RefreshProfileOptions = {
+  username?: string | null;
+};
+
 interface AuthContextType {
   userId: string | null;
   profile: Profile | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: (options?: RefreshProfileOptions) => Promise<ProvisioningResponse | null>;
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isShura: boolean;
@@ -51,13 +67,33 @@ interface AuthContextType {
   canAccess: (requiredRole: UserRole) => boolean;
   isSignedIn: boolean;
   resolvedRole: UserRole | null;
+  needsOnboarding: boolean;
+  suggestedUsername: string | null;
+  provisioningError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+class ClientProvisioningError extends Error {
+  status: number;
+  suggestedUsername: string | null;
+
+  constructor(message: string, status = 500, suggestedUsername: string | null = null) {
+    super(message);
+    this.name = "ClientProvisioningError";
+    this.status = status;
+    this.suggestedUsername = suggestedUsername;
+  }
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Defensive merge-safe guard: supports both consolidated and split runtime flags.
-  const hasConfiguredAuth = hasFullAuthConfig || (hasClerkPublishableKey && hasSupabaseBrowserEnv);
+  const hasConfiguredAuth =
+    hasFullAuthConfig || (hasClerkPublishableKey && hasSupabaseBrowserEnv);
 
   if (!hasConfiguredAuth) {
     return <FallbackAuthProvider>{children}</FallbackAuthProvider>;
@@ -72,6 +108,9 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [suggestedUsername, setSuggestedUsername] = useState<string | null>(null);
+  const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [{ supabase, supabaseError }] = useState(() => {
     try {
       return { supabase: createClient(), supabaseError: null as string | null };
@@ -84,54 +123,101 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
-  const fetchProfile = useCallback(
-    async (userId: string) => {
-      if (!supabase) return null;
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      if (error) {
-        // Profile might not exist yet if webhook hasn't fired
-        if (error.code === "PGRST116") {
-          console.log("Profile not found, it may be created shortly via webhook");
-          return null;
-        }
-        console.error("Error fetching profile:", error);
+  const refreshProfile = useCallback(
+    async (options?: RefreshProfileOptions) => {
+      if (!user?.id) {
+        setProfile(null);
+        setNeedsOnboarding(false);
+        setSuggestedUsername(null);
+        setProvisioningError(null);
         return null;
       }
 
-      return data as Profile;
+      const body =
+        options?.username !== undefined ? { username: options.username ?? null } : {};
+
+      const response = await fetch("/api/onboarding/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as Partial<ProvisioningResponse> & {
+        error?: string;
+        suggestedUsername?: string | null;
+      };
+
+      if (!response.ok) {
+        const message = payload.error || "Failed to set up your profile";
+        const nextSuggestion = isNonEmptyString(payload.suggestedUsername)
+          ? payload.suggestedUsername
+          : null;
+        setProvisioningError(message);
+        setNeedsOnboarding(true);
+        setSuggestedUsername((current) => nextSuggestion ?? current);
+        throw new ClientProvisioningError(message, response.status, nextSuggestion);
+      }
+
+      const nextProfile = (payload.profile ?? null) as Profile | null;
+      const nextSuggestedUsername = isNonEmptyString(payload.suggestedUsername)
+        ? payload.suggestedUsername
+        : nextProfile?.username ?? null;
+
+      setProfile(nextProfile);
+      setNeedsOnboarding(Boolean(payload.needsOnboarding));
+      setSuggestedUsername(nextSuggestedUsername);
+      setProvisioningError(null);
+
+      return payload as ProvisioningResponse;
     },
-    [supabase]
+    [user?.id]
   );
 
-  const refreshProfile = useCallback(async () => {
-    if (user?.id) {
-      const profileData = await fetchProfile(user.id);
-      setProfile(profileData);
-    }
-  }, [user?.id, fetchProfile]);
-
   useEffect(() => {
-    if (!isClerkLoaded) return;
+    if (!isClerkLoaded) {
+      return;
+    }
+
+    let cancelled = false;
 
     const loadProfile = async () => {
       setProfileLoading(true);
-      if (isSignedIn && user?.id) {
-        const profileData = await fetchProfile(user.id);
-        setProfile(profileData);
-      } else {
-        setProfile(null);
+
+      if (!isSignedIn || !user?.id) {
+        if (!cancelled) {
+          setProfile(null);
+          setNeedsOnboarding(false);
+          setSuggestedUsername(null);
+          setProvisioningError(null);
+          setProfileLoading(false);
+        }
+        return;
       }
-      setProfileLoading(false);
+
+      try {
+        await refreshProfile();
+      } catch (error) {
+        if (!cancelled) {
+          setProfile(null);
+          setNeedsOnboarding(true);
+          if (error instanceof Error) {
+            setProvisioningError(error.message);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setProfileLoading(false);
+        }
+      }
     };
 
     void loadProfile();
-  }, [isClerkLoaded, isSignedIn, user?.id, fetchProfile]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isClerkLoaded, isSignedIn, refreshProfile, user?.id]);
 
   useEffect(() => {
     if (!isSignedIn || !user?.id) return;
@@ -146,7 +232,11 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        await fetch("/api/users/status", { method: "POST", keepalive: true, cache: "no-store" });
+        await fetch("/api/users/status", {
+          method: "POST",
+          keepalive: true,
+          cache: "no-store",
+        });
       } catch (error) {
         if (!(error instanceof TypeError)) {
           console.error("Error updating status:", error);
@@ -185,7 +275,9 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
         },
         (payload: RealtimePostgresChangesPayload<Profile>) => {
           if (!payload.new) return;
-          setProfile(payload.new as Profile);
+          const nextProfile = payload.new as Profile;
+          setProfile(nextProfile);
+          setNeedsOnboarding(!isNonEmptyString(nextProfile.username));
         }
       )
       .subscribe();
@@ -198,6 +290,9 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     await clerkSignOut();
     setProfile(null);
+    setNeedsOnboarding(false);
+    setSuggestedUsername(null);
+    setProvisioningError(null);
   };
 
   const clerkRole = normalizeClerkRole(orgRole);
@@ -230,21 +325,29 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile,
     isSuperAdmin: resolvedRole === "super_admin",
     isAdmin: resolvedRole === "admin" || resolvedRole === "super_admin",
-    isShura: resolvedRole === "shura" || resolvedRole === "admin" || resolvedRole === "super_admin",
+    isShura:
+      resolvedRole === "shura" ||
+      resolvedRole === "admin" ||
+      resolvedRole === "super_admin",
     isImam: resolvedRole === "imam" || hasRoleOrHigher(resolvedRole ?? "member", "imam"),
     isMember: Boolean(profile),
     hasRole,
     canAccess,
     isSignedIn: isSignedIn ?? false,
     resolvedRole,
+    needsOnboarding,
+    suggestedUsername,
+    provisioningError,
   };
 
   if (supabaseError) {
     return (
       <AuthContext.Provider value={value}>
         <div className="flex min-h-screen items-center justify-center p-4">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center max-w-md">
-            <h2 className="text-lg font-semibold text-destructive mb-2">Configuration Error</h2>
+          <div className="max-w-md rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
+            <h2 className="mb-2 text-lg font-semibold text-destructive">
+              Configuration Error
+            </h2>
             <p className="text-sm text-muted-foreground">{supabaseError}</p>
           </div>
         </div>
@@ -261,7 +364,7 @@ function FallbackAuthProvider({ children }: { children: React.ReactNode }) {
     profile: null,
     loading: false,
     signOut: async () => {},
-    refreshProfile: async () => {},
+    refreshProfile: async () => null,
     isSuperAdmin: false,
     isAdmin: false,
     isShura: false,
@@ -271,6 +374,9 @@ function FallbackAuthProvider({ children }: { children: React.ReactNode }) {
     canAccess: () => false,
     isSignedIn: false,
     resolvedRole: null,
+    needsOnboarding: false,
+    suggestedUsername: null,
+    provisioningError: null,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdmin()
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, avatar_url, bio, locale, metadata')
+      .select('*')
       .in('id', ids)
 
     if (error) {

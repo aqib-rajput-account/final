@@ -138,3 +138,10 @@ POST /api/conversations/[id]/messages - Post message
 ---
 
 The app now provides a full social media experience with real user data, fast performance, and secure messaging!
+
+## Release Checklist
+
+- Run `backend/feed/migrations/20260406_create_feed_social_tables.sql` in environments that still rely on the legacy post/comment schema.
+- Run `backend/feed/migrations/20260406_add_safety_controls.sql` so profile privacy settings and moderation tables exist.
+- Run `backend/feed/migrations/20260406_add_feed_timeline_materialization.sql` and `backend/feed/migrations/20260408_add_messenger_core.sql` before enabling the latest feed and messaging APIs.
+- Run `backend/feed/migrations/20260410_align_profile_onboarding_schema.sql` so onboarding/profile reads have `profiles.locale`, `profiles.metadata`, and the current `posts.visibility` defaults available everywhere.

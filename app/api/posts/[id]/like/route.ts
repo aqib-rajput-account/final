@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
+import { ensureUserProfileExists } from '@/backend/auth/provisioning'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { canUsersInteract, enforceMultiScopeThrottle } from '@/backend/safety/service'
@@ -35,6 +36,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    await ensureUserProfileExists(userId)
 
     const throttle = await enforceMultiScopeThrottle({
       request,
@@ -131,6 +134,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    await ensureUserProfileExists(userId)
 
     const throttle = await enforceMultiScopeThrottle({
       request,

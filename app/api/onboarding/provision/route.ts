@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { ProvisioningError, provisionMemberAccount } from "@/backend/auth/provisioning";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
 
@@ -10,8 +10,16 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const result = await provisionMemberAccount({ userId });
-    return NextResponse.json({ success: true, ...result });
+    const body = await request.json().catch(() => ({})) as {
+      username?: string | null;
+    };
+
+    const result = await provisionMemberAccount({
+      userId,
+      username: body.username ?? null,
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ProvisioningError) {
       return NextResponse.json(
@@ -23,6 +31,7 @@ export async function POST() {
       );
     }
 
+    console.error("Unexpected onboarding provisioning error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { ensureUserProfileExists } from '@/backend/auth/provisioning'
 import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,8 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json({ success: false, reason: 'not_authenticated' })
     }
+
+    await ensureUserProfileExists(userId)
 
     const { error } = await supabase
       .from('profiles')

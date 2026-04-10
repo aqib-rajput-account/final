@@ -12,6 +12,14 @@ export interface Profile {
   mosque_id: string | null;
   is_verified: boolean;
   is_active: boolean;
+  locale?: string | null;
+  metadata?: any;
+  privacy_settings?: any;
+  last_seen_at?: string | null;
+  profession?: string | null;
+  education?: string | null;
+  languages?: string[] | null;
+  website?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -93,9 +101,11 @@ export interface Post {
   author_id: string;
   mosque_id: string | null;
   content: string;
+  body?: string | null;
   image_url: string | null;
   post_type?: string;
   category?: string;
+  visibility?: string | null;
   metadata?: any;
   likes_count: number;
   comments_count: number;

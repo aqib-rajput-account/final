@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
+import { ensureUserProfileExists } from '@/backend/auth/provisioning'
 import { resolveIdempotencyKey } from '@/backend/realtime/idempotency'
 import { publishRealtimeEvent } from '@/backend/realtime/service'
 import { enqueueWork } from '@/lib/infrastructure/queue'
@@ -326,6 +327,8 @@ export async function POST(request: Request) {
       observeCounter('feed.write.errors.total', 1, { reason: 'unauthorized' })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    await ensureUserProfileExists(userId)
 
     const throttle = await enforceMultiScopeThrottle({
       request,

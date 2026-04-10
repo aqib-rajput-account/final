@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedUserId } from '@/backend/auth/request-auth'
+import { ensureUserProfileExists } from '@/backend/auth/provisioning'
 import { createClient } from '@/lib/supabase/server'
 import { MessagingError } from '@/backend/messages-core'
 
@@ -9,6 +10,7 @@ export async function requireMessagingSession(request: Request) {
     throw new MessagingError('Unauthorized', 401, 'unauthorized')
   }
 
+  await ensureUserProfileExists(userId)
   const supabase = await createClient()
   return { supabase, userId }
 }

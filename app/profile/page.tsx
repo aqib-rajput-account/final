@@ -27,9 +27,16 @@ import { Loader2, Upload, Mail, Phone, Shield, Calendar, Send } from "lucide-rea
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { profile, userId, isSignedIn, loading: authLoading, refreshProfile, resolvedRole } = useAuth();
+  const {
+    profile,
+    userId,
+    isSignedIn,
+    loading: authLoading,
+    refreshProfile,
+    resolvedRole,
+    provisioningError,
+  } = useAuth();
   const [saving, setSaving] = useState(false);
-  const [bootstrappingProfile, setBootstrappingProfile] = useState(false);
   const [emailVerifiedOverride, setEmailVerifiedOverride] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
@@ -138,52 +145,17 @@ export default function ProfilePage() {
     return null;
   }
 
-  const handleBootstrapProfile = async () => {
-    setBootstrappingProfile(true);
-    try {
-      const response = await fetch("/api/profile/bootstrap", { method: "POST" });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create profile");
-      }
-      await refreshProfile();
-      toast.success("Profile is ready");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to set up profile");
-    } finally {
-      setBootstrappingProfile(false);
-    }
-  };
-
   if (!profile) {
     return (
       <div className="flex min-h-screen flex-col">
         <Header />
-        <main className="flex-1 bg-muted/30">
-          <div className="mx-auto max-w-3xl px-4 py-8 lg:px-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>Setting up your profile</CardTitle>
-                <CardDescription>
-                  We could not find your profile yet. Click below to create it now.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button onClick={handleBootstrapProfile} disabled={bootstrappingProfile}>
-                  {bootstrappingProfile ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Profile...
-                    </>
-                  ) : (
-                    "Create My Profile"
-                  )}
-                </Button>
-                <Button variant="outline" onClick={() => refreshProfile()} disabled={bootstrappingProfile}>
-                  Retry
-                </Button>
-              </CardContent>
-            </Card>
+        <main className="flex-1 bg-muted/30 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary opacity-50" />
+            <p className="text-sm text-muted-foreground">Finalizing your profile session...</p>
+            {provisioningError && (
+              <p className="text-xs text-destructive max-w-sm px-4">{provisioningError}</p>
+            )}
           </div>
         </main>
         <Footer />

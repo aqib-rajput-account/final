@@ -35,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, username, avatar_url, bio, locale, metadata, full_name, phone, email, privacy_settings')
+      .select('*')
       .eq('id', userId)
       .single()
 

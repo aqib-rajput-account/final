@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   mosque_id UUID,
   is_verified BOOLEAN DEFAULT false,
   is_active BOOLEAN DEFAULT true,
+  locale TEXT DEFAULT 'en-US',
+  metadata JSONB DEFAULT '{}'::jsonb,
+  privacy_settings JSONB DEFAULT '{
+    "phone": "private",
+    "email": "private",
+    "bio": "public",
+    "avatar_url": "public",
+    "full_name": "public"
+  }'::jsonb,
   last_seen_at TIMESTAMPTZ,
   profession TEXT,
   education TEXT,
@@ -230,6 +239,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
   image_url TEXT,
   post_type TEXT DEFAULT 'text',
   category TEXT DEFAULT 'general',
+  visibility TEXT DEFAULT 'public' CHECK (visibility IN ('public', 'followers', 'private')),
   metadata JSONB DEFAULT '{}'::jsonb,
   likes_count INTEGER DEFAULT 0,
   comments_count INTEGER DEFAULT 0,
