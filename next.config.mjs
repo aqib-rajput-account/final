@@ -11,6 +11,8 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: '*.public.blob.vercel-storage.com' },
       { protocol: 'https', hostname: 'img.clerk.com' },
+      { protocol: 'https', hostname: '*.stream-io-cdn.com' },
+      { protocol: 'https', hostname: 'getstream.io' },
       ...(cdnHost ? [{ protocol: 'https', hostname: cdnHost }] : []),
       ...(mediaHost ? [{ protocol: 'https', hostname: mediaHost }] : []),
     ],

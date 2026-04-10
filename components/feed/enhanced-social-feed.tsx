@@ -17,6 +17,7 @@ import {
   Lock,
   Megaphone,
   MessageCircle,
+  Mic,
   Paperclip,
   Search,
   Send,
@@ -25,6 +26,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { LiveRoomsSidebar } from '@/components/audio-conferences/live-rooms-sidebar'
 import { useAuth } from '@/lib/auth'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -1264,6 +1266,12 @@ export function EnhancedSocialFeed() {
                     <Megaphone className="mr-1.5 h-4 w-4" />
                     Announcement
                   </Button>
+                  <Button type="button" variant="outline" size="sm" className="rounded-full gap-1.5" asChild>
+                    <Link href="/feed/audio-conferences">
+                      <Mic className="h-3.5 w-3.5" />
+                      Spaces
+                    </Link>
+                  </Button>
                 </div>
 
                 <Textarea
@@ -1468,34 +1476,40 @@ export function EnhancedSocialFeed() {
       </main>
 
       <aside className="hidden xl:block">
-        <Card className="sticky top-20 border-border/60 shadow-sm">
-          <CardHeader className="space-y-3 border-b border-border/60 pb-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Members</h2>
-                <p className="text-sm text-muted-foreground">Online members stay pinned to the top while the list stays calm.</p>
+        <div className="sticky top-20 space-y-4">
+          {/* Live Spaces sidebar widget */}
+          <LiveRoomsSidebar />
+
+          {/* Members list */}
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="space-y-3 border-b border-border/60 pb-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Members</h2>
+                  <p className="text-sm text-muted-foreground">Online members stay pinned to the top while the list stays calm.</p>
+                </div>
+                <Badge variant="secondary" className="rounded-full">
+                  {onlineMemberCount} online
+                </Badge>
               </div>
-              <Badge variant="secondary" className="rounded-full">
-                {onlineMemberCount} online
-              </Badge>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search members" className="rounded-full pl-9" />
-            </div>
-          </CardHeader>
-          <ScrollArea className="h-[calc(100vh-220px)]">
-            <div className="space-y-1 p-3">
-              {memberRows.length === 0 ? (
-                <p className="rounded-2xl px-3 py-6 text-center text-sm text-muted-foreground">No members match that search.</p>
-              ) : (
-                memberRows.map(({ member, isOnline }) => {
-                  return <MemberRow key={member.id} member={member} isOnline={isOnline} />
-                })
-              )}
-            </div>
-          </ScrollArea>
-        </Card>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search members" className="rounded-full pl-9" />
+              </div>
+            </CardHeader>
+            <ScrollArea className="h-[calc(100vh-340px)]">
+              <div className="space-y-1 p-3">
+                {memberRows.length === 0 ? (
+                  <p className="rounded-2xl px-3 py-6 text-center text-sm text-muted-foreground">No members match that search.</p>
+                ) : (
+                  memberRows.map(({ member, isOnline }) => {
+                    return <MemberRow key={member.id} member={member} isOnline={isOnline} />
+                  })
+                )}
+              </div>
+            </ScrollArea>
+          </Card>
+        </div>
       </aside>
 
       <Dialog
