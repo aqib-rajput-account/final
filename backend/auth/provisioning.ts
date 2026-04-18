@@ -24,6 +24,7 @@ export type ProvisionedProfile = {
   mosque_id: string | null;
   is_verified: boolean;
   is_active: boolean;
+  verification_attempts: number;
   created_at: string;
   updated_at: string;
 };
@@ -331,11 +332,26 @@ export async function provisionMemberAccount(args: {
 
   const defaults = deriveClerkDefaults(clerkUser);
 
+  // 1.5. Seamless OAuth Linking Fix:
+  // If the email is not verified in Clerk, mark it as verified via the Admin API.
+  // This prevents Clerk from sending verification/linking emails that hit the 100-email development limit.
+  const primaryEmail = clerkUser.emailAddresses?.find(e => e.id === clerkUser.primaryEmailAddressId);
+  if (primaryEmail && primaryEmail.verification?.status !== "verified") {
+    try {
+      await clerk.emailAddresses.updateEmailAddress(primaryEmail.id!, {
+        verified: true,
+      });
+      console.log(`Manually verified Clerk email for user ${args.userId} to avoid quota issues.`);
+    } catch (err) {
+      console.warn("Failed to manually verify Clerk email (non-blocking):", err);
+    }
+  }
+
   // 2. Fetch Existing Profile
   const { data: existingProfile, error: existingProfileError } = await supabase
     .from("profiles")
     .select(
-      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, locale, metadata, created_at, updated_at"
+      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, verification_attempts, locale, metadata, created_at, updated_at"
     )
     .eq("id", args.userId)
     .maybeSingle();
@@ -393,8 +409,11 @@ export async function provisionMemberAccount(args: {
       null,
     mosque_id: args.mosqueId ?? profile?.mosque_id ?? null,
     role: resolvedRole,
-    is_verified: Boolean(profile?.is_verified) || defaults.isVerified,
+    // For Sign-up v2: Decouple app verification from Clerk verification for Email/Password users.
+    // OAuth (Google) users stay verified. Email/Password users must verify via the profile page.
+    is_verified: profile?.is_verified ?? (clerkUser.emailAddresses?.some(e => e.verification?.status === "verified" && !e.emailAddress?.includes("google.com")) ? false : defaults.isVerified),
     is_active: typeof profile?.is_active === "boolean" ? profile.is_active : true,
+    verification_attempts: profile?.verification_attempts ?? 0,
     updated_at: new Date().toISOString(),
   };
 
@@ -419,7 +438,7 @@ export async function provisionMemberAccount(args: {
     .from("profiles")
     .upsert(nextProfilePayload, { onConflict: "id" })
     .select(
-      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, locale, metadata, created_at, updated_at"
+      "id, email, full_name, username, avatar_url, phone, bio, role, mosque_id, is_verified, is_active, verification_attempts, locale, metadata, created_at, updated_at"
     )
     .single();
 

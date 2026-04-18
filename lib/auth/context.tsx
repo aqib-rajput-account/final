@@ -37,6 +37,7 @@ export interface Profile {
   mosque_id: string | null;
   is_verified: boolean;
   is_active: boolean;
+  verification_attempts: number;
   created_at: string;
   updated_at: string;
 }

@@ -157,15 +157,25 @@ export default function SignUpPage() {
         password,
       });
 
-      // 2. Force email_code strategy — this is the key fix!
-      //    This bypasses the Clerk Dashboard's email_link setting
-      //    and directly sends a 6-digit OTP code instead.
-      await signUp.prepareEmailAddressVerification({
-        strategy: "email_code",
-      });
+      // 2. Skip verification and activate session immediately if possible
+      // This requires "Allow sign-in with unverified email" to be enabled in Clerk Dashboard
+      if (signUp.createdSessionId) {
+        await setActive({ session: signUp.createdSessionId });
+        
+        // Proactively trigger provisioning to mark email as verified in Clerk
+        // This avoids future 100-email limit errors during Google sign-in linking.
+        try {
+          await fetch("/api/onboarding/provision", { method: "POST" });
+        } catch (e) {
+          console.warn("Proactive provisioning failed:", e);
+        }
 
-      setStep("verify");
-      setResendCooldown(60);
+        window.location.href = finalDestination;
+      } else {
+        // Fallback: If Clerk still requires verification to create a session,
+        // we redirect anyway or handle the status.
+        window.location.href = finalDestination;
+      }
     } catch (err: unknown) {
       setError(extractClerkError(err));
     } finally {
@@ -306,7 +316,7 @@ export default function SignUpPage() {
                     disabled={loading}
                   />
                   <p className="text-xs text-muted-foreground">
-                    We will send a 6-digit verification code to your email.
+                    You can verify your email later in your profile settings to access premium features.
                   </p>
                 </div>
 

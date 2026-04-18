@@ -383,7 +383,7 @@ export default function ProfilePage() {
 
 function EmailVerificationButton({ onVerified }: { onVerified: () => void }) {
   const { user } = useUser();
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, profile } = useAuth();
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
@@ -395,11 +395,31 @@ function EmailVerificationButton({ onVerified }: { onVerified: () => void }) {
       return;
     }
 
+    // Check attempt limit
+    if ((profile?.verification_attempts ?? 0) >= 100) {
+      toast.error("Email verification limit reached (100). Please setup it later or contact support.");
+      return;
+    }
+
     setSendingVerification(true);
     try {
       await user.primaryEmailAddress.prepareVerification({
         strategy: "email_code",
       });
+      
+      // Increment attempts in Supabase
+      const supabase = createClient();
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ verification_attempts: (profile?.verification_attempts ?? 0) + 1 })
+        .eq("id", user.id);
+
+      if (updateError) {
+        console.warn("Failed to increment verification attempts:", updateError);
+      } else {
+        await refreshProfile();
+      }
+
       setShowCodeInput(true);
       toast.success("Verification email sent with a 6-digit code. Please check your inbox.");
     } catch (error) {
@@ -460,17 +480,19 @@ function EmailVerificationButton({ onVerified }: { onVerified: () => void }) {
         onClick={sendEmailVerificationLink}
         variant="link"
         className="h-auto p-0 text-primary"
-        disabled={sendingVerification}
+        disabled={sendingVerification || (profile?.verification_attempts ?? 0) >= 100}
       >
         {sendingVerification ? (
           <>
             <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            Sending verification email...
+            Sending...
           </>
+        ) : (profile?.verification_attempts ?? 0) >= 100 ? (
+          <span className="text-amber-600 font-medium">Daily limit reached. Setup later.</span>
         ) : (
           <>
             <Send className="mr-2 h-3.5 w-3.5" />
-            Send verification email
+            Verify via Email (Premium Feature)
           </>
         )}
       </Button>
