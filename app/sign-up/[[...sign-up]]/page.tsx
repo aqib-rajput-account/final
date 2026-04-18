@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSignUp, useUser, useClerk } from "@clerk/nextjs";
+import { useSignUp, useSignIn, useUser, useClerk, AuthenticateWithRedirectCallback } from "@clerk/nextjs";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,7 @@ export default function SignUpPage() {
     : "/onboarding";
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const { isLoaded: signUpLoaded, signUp, setActive } = useSignUp();
+  const { isLoaded: signInLoaded, signIn } = useSignIn();
   const clerk = useClerk();
 
   const [step, setStep] = useState<FlowStep>("start");
@@ -48,35 +49,12 @@ export default function SignUpPage() {
     pathname?.includes("sso-callback") ||
     searchParams.has("__clerk_status");
 
-  // Handle SSO callback — delegate to Clerk's built-in handler
-  useEffect(() => {
-    if (!isSSOCallback || !signUpLoaded) return;
-
-    const handleCallback = async () => {
-      try {
-        await clerk.handleRedirectCallback({
-          afterSignUpUrl: finalDestination,
-          afterSignInUrl: finalDestination,
-          redirectUrl: finalDestination,
-        });
-      } catch (err) {
-        console.error("SSO callback error:", err);
-        setError("Failed to complete sign-up with Google. Please try again.");
-        setStep("start");
-        // Navigate to clean sign-up URL
-        router.replace("/sign-up");
-      }
-    };
-
-    void handleCallback();
-  }, [isSSOCallback, signUpLoaded, clerk, finalDestination, router]);
-
   // Redirect if already signed in
   useEffect(() => {
-    if (userLoaded && isSignedIn) {
+    if (userLoaded && isSignedIn && !isSSOCallback) {
       window.location.href = finalDestination;
     }
-  }, [userLoaded, isSignedIn, finalDestination]);
+  }, [userLoaded, isSignedIn, finalDestination, isSSOCallback]);
 
   // Resend cooldown timer
   useEffect(() => {
@@ -135,6 +113,10 @@ export default function SignUpPage() {
   if (isSSOCallback) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
+        <AuthenticateWithRedirectCallback 
+          signInForceRedirectUrl={finalDestination}
+          signUpForceRedirectUrl={finalDestination}
+        />
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <BrandHeader />
@@ -150,9 +132,6 @@ export default function SignUpPage() {
               <div className="flex justify-center py-4">
                 <Spinner className="h-6 w-6" />
               </div>
-              {error && (
-                <p className="text-sm text-destructive text-center">{error}</p>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -222,17 +201,19 @@ export default function SignUpPage() {
   };
 
   const handleGoogleSignUp = async () => {
-    if (!signUp) return;
+    if (!signIn) return;
     setError(null);
+    setLoading(true);
 
     try {
-      await signUp.authenticateWithRedirect({
+      await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl: "/sign-up/sso-callback",
         redirectUrlComplete: finalDestination,
       });
     } catch (err: unknown) {
       setError(extractClerkError(err));
+      setLoading(false);
     }
   };
 

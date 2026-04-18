@@ -1,14 +1,31 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, verifyToken } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { ProvisioningError, provisionMemberAccount } from "@/backend/auth/provisioning";
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
+    let rawUserId: string | null = null;
+    const tokenHeader = request.headers.get("x-onboarding-token");
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (tokenHeader) {
+      try {
+        const decoded = await verifyToken(tokenHeader, { secretKey: process.env.CLERK_SECRET_KEY });
+        rawUserId = decoded.sub;
+      } catch (err) {
+        console.warn("Invalid x-onboarding-token", err);
+      }
     }
+
+    if (!rawUserId) {
+      const { userId } = await auth();
+      rawUserId = userId;
+    }
+
+    if (!rawUserId) {
+      return NextResponse.json({ error: "Unauthorized (Session could not be verified)" }, { status: 401 });
+    }
+
+    const userId = rawUserId;
 
     const body = await request.json().catch(() => ({})) as {
       fullName?: string | null;
@@ -22,7 +39,7 @@ export async function POST(request: NextRequest) {
       fullName: body.fullName ?? null,
       username: body.username ?? null,
       mosqueId: body.mosqueId ?? null,
-      role: body.role ?? null,
+      role: "member", // SECURITY LOCK: Force new onboarded users to member only. Admins elevate later.
     });
 
     return NextResponse.json(result);

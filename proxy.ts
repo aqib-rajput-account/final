@@ -22,12 +22,12 @@ const isShuraRoute = createRouteMatcher(["/shura(.*)"]);
 
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
-    if (request.nextUrl.pathname.startsWith('/api/')) {
+    if (request.nextUrl.pathname.startsWith('/api/') && !request.nextUrl.pathname.startsWith('/api/onboarding/provision')) {
       const { userId } = await auth();
       if (!userId) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
-    } else {
+    } else if (!request.nextUrl.pathname.startsWith('/api/onboarding/provision')) {
       await auth.protect({
         unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
       });
@@ -38,11 +38,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   const role = normalizeClerkRole(orgRole);
   const hasOrgRole = Boolean(orgRole);
 
-  // If organization roles are not configured on this session,
-  // skip strict route RBAC here and let app-level profile guards handle access.
-  if (!hasOrgRole) {
-    return NextResponse.next();
-  }
+  // organization roles are normalized by normalizeClerkRole, which safely defaults to 'member'.
 
   if (isAdminRoute(request) && !canAccessAdminPanel(role)) {
     return NextResponse.redirect(new URL("/unauthorized", request.url));

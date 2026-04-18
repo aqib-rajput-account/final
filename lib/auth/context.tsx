@@ -158,7 +158,7 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...(token ? { "x-onboarding-token": token } : {})
         },
         body: JSON.stringify(body),
         cache: "no-store",
@@ -250,10 +250,8 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const token = await getToken();
         await fetch("/api/users/status", {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           keepalive: true,
           cache: "no-store",
         });

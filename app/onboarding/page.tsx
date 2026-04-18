@@ -136,10 +136,7 @@ function OnboardingContent() {
   useEffect(() => {
     const fetchMosques = async () => {
       try {
-        const token = await getToken();
-        const response = await fetch("/api/mosques?limit=100", {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        const response = await fetch("/api/mosques?limit=100");
         if (response.ok) {
           const data = await response.json();
           setMosques(data.mosques || []);
@@ -208,7 +205,7 @@ function OnboardingContent() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...(token ? { "x-onboarding-token": token } : {})
         },
         body: JSON.stringify({
           fullName: normalizedFullName,
@@ -304,6 +301,10 @@ function OnboardingContent() {
                 : `Auto-joining MasjidConnect as a community member`
               }
             </div>
+          </div>
+
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary/80">
+            <strong>Tip:</strong> Don't stress! You can safely leave these as defaults and update your information anytime via your Profile Settings after you enter the app.
           </div>
 
           <form className="space-y-6" onSubmit={handleSubmit}>
