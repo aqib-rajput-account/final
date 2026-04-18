@@ -1701,7 +1701,7 @@ export function MessengerCoreView() {
                           {showAvatar ? (
                             <Avatar className="mt-1 h-9 w-9">
                               <AvatarImage src={message.sender?.avatar_url ?? ""} />
-                              <AvatarFallback>{initials(message.sender?.full_name)}</AvatarFallback>
+                              <AvatarFallback>{message.sender ? initials(message.sender.full_name) : "U"}</AvatarFallback>
                             </Avatar>
                           ) : (
                             <div className="w-9" />
@@ -1709,7 +1709,7 @@ export function MessengerCoreView() {
 
                           <div className={cn("max-w-[85%] space-y-2 md:max-w-[70%]", ownMessage && "items-end")}>
                             {showAvatar && !ownMessage && (
-                              <p className="pl-1 text-xs font-medium text-muted-foreground">{message.sender?.full_name}</p>
+                              <p className="pl-1 text-xs font-medium text-muted-foreground">{message.sender?.full_name || "No longer a member"}</p>
                             )}
 
                             {message.reply_to && (

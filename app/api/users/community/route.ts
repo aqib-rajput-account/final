@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     const { data: members, error } = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url, bio, profession, role, last_seen_at')
+      .eq('is_active', true)
       .limit(100)
       .order('created_at', { ascending: false })
 

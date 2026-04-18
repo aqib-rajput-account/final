@@ -1,10 +1,14 @@
 import { auth, verifyToken } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { ProvisioningError, provisionMemberAccount } from "@/backend/auth/provisioning";
+import { normalizeClerkRole } from "@/lib/auth/clerk-rbac";
 
 export async function POST(request: NextRequest) {
   try {
     let rawUserId: string | null = null;
+    let organizationRole: string | null = null;
+    const { orgRole } = await auth();
+    organizationRole = orgRole || null;
     const tokenHeader = request.headers.get("x-onboarding-token");
 
     if (tokenHeader) {
@@ -34,12 +38,15 @@ export async function POST(request: NextRequest) {
       role?: string | null;
     };
 
+    // Calculate role: Prioritize body.role if exists, but fallback to Clerk role normalization.
+    const resolvedAuthRole = normalizeClerkRole(organizationRole);
+
     const result = await provisionMemberAccount({
       userId,
       fullName: body.fullName ?? null,
       username: body.username ?? null,
       mosqueId: body.mosqueId ?? null,
-      role: "member", // SECURITY LOCK: Force new onboarded users to member only. Admins elevate later.
+      role: resolvedAuthRole !== "member" ? resolvedAuthRole : (body.role ?? "member"),
     });
 
     return NextResponse.json(result);

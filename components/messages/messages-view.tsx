@@ -816,10 +816,10 @@ export function MessagesView() {
                         >
                           {showAvatar ? (
                             <div className="flex flex-col flex-shrink-0">
-                              <Avatar className={cn("h-8 w-8 sm:h-9 sm:w-9 rounded-xl shadow-sm ring-offset-2 ring-transparent transition-all", !isOwn && "hover:ring-primary/20 hover:scale-105")}>
+                              <Avatar className={cn("h-8 w-8 sm:h-9 sm:w-9 rounded-xl shadow-sm ring-offset-2 ring-transparent transition-all", !isOwn && msg.sender && "hover:ring-primary/20 hover:scale-105")}>
                                 <AvatarImage src={msg.sender?.avatar_url || ""} />
                                 <AvatarFallback className="rounded-xl bg-primary/5 text-primary text-[10px] font-bold">
-                                  {msg.sender?.full_name?.charAt(0)}
+                                  {msg.sender?.full_name?.charAt(0) || "U"}
                                 </AvatarFallback>
                               </Avatar>
                             </div>
@@ -828,7 +828,9 @@ export function MessagesView() {
                           )}
                           <div className={cn("max-w-[85%] sm:max-w-[75%] flex flex-col", isOwn && "items-end")}>
                             {showAvatar && !isOwn && (
-                              <p className="mb-1 ml-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{msg.sender?.full_name}</p>
+                              <p className="mb-1 ml-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                                {msg.sender?.full_name || "No longer a member"}
+                              </p>
                             )}
                             <div
                               className={cn(

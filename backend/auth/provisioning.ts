@@ -398,6 +398,22 @@ export async function provisionMemberAccount(args: {
     updated_at: new Date().toISOString(),
   };
 
+  // 3.5. Duplicate Management (Non-Blocking)
+  // If we have an email, deactivate any other accounts that share it to prevent UI duplicates.
+  // This is critical for local testing environments where webhooks may not be running.
+  if (nextProfilePayload.email) {
+    supabase
+      .from("profiles")
+      .update({ is_active: false })
+      .eq("email", nextProfilePayload.email)
+      .neq("id", args.userId)
+      .then(({ error }) => {
+        if (error) {
+          console.warn("Failed to deactivate duplicate profiles:", error);
+        }
+      });
+  }
+
   // 4. Perform Upsert
   const { data: provisionedProfile, error: upsertError } = await supabase
     .from("profiles")

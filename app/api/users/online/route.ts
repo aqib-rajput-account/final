@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     const { data: onlineUsers, error } = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url, bio, profession, role')
+      .eq('is_active', true)
       .gte('last_seen_at', fiveMinutesAgo)
       .limit(50)
       .order('last_seen_at', { ascending: false })

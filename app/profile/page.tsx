@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Loader2, Upload, Mail, Phone, Shield, Calendar, Send } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -184,9 +185,17 @@ export default function ProfilePage() {
                       <h1 className="text-2xl font-bold">
                         {profile.full_name || "User"}
                       </h1>
-                      <Badge variant="secondary" className="w-fit capitalize">
-                        <Shield className="h-3 w-3 mr-1" />
-                        {resolvedRole || profile.role}
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "capitalize rounded-full px-3 py-1 font-semibold border shadow-sm",
+                          (resolvedRole || profile.role) === 'admin' || (resolvedRole || profile.role) === 'super_admin' ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20" :
+                          (resolvedRole || profile.role) === 'shura' ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20" :
+                          (resolvedRole || profile.role) === 'imam' ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" :
+                          "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {(resolvedRole || profile.role) === 'super_admin' ? 'Super Admin' : (resolvedRole || profile.role)}
                       </Badge>
                     </div>
                     {profile.username && (
@@ -349,8 +358,17 @@ export default function ProfilePage() {
                       Your current role in the system
                     </p>
                   </div>
-                  <Badge variant="outline" className="capitalize">
-                    {resolvedRole || profile.role}
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      "capitalize rounded-full px-2.5 py-0.5 font-semibold",
+                      (resolvedRole || profile.role) === 'admin' || (resolvedRole || profile.role) === 'super_admin' ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20" :
+                      (resolvedRole || profile.role) === 'shura' ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20" :
+                      (resolvedRole || profile.role) === 'imam' ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" :
+                      "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {(resolvedRole || profile.role) === 'super_admin' ? 'Super Admin' : (resolvedRole || profile.role)}
                   </Badge>
                 </div>
               </CardContent>

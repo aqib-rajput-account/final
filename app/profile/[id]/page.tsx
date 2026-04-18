@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
 import { useRealtimeSubscription } from '@/lib/hooks/use-realtime'
+import { cn } from '@/lib/utils'
 
 const fetcher = async (userId: string) => {
   const supabase = createClient()
@@ -159,7 +160,18 @@ export default function UserProfilePage() {
               <p className="text-lg text-muted-foreground mb-3">{profile.profession}</p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Badge variant="default" className="capitalize">{profile.role}</Badge>
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "capitalize rounded-full px-3 py-1 font-semibold",
+                  profile.role === 'admin' || profile.role === 'super_admin' ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20" :
+                  profile.role === 'shura' ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20" :
+                  profile.role === 'imam' ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20" :
+                  "bg-muted text-muted-foreground"
+                )}
+              >
+                {profile.role === 'super_admin' ? 'Super Admin' : profile.role}
+              </Badge>
               {profile.is_active && (
                 <Badge variant="secondary" className="bg-green-500">
                   <div className="h-2 w-2 bg-white rounded-full mr-2" />

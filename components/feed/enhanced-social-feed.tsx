@@ -160,8 +160,41 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 }
 
 function roleLabel(role: string | null | undefined) {
-  if (!role || role === 'member' || role === 'user') return null
+  if (!role || role === 'member' || role === 'user') return 'Member'
+  if (role === 'super_admin') return 'Super Admin'
   return role.charAt(0).toUpperCase() + role.slice(1)
+}
+
+function RoleBadge({ role, className }: { role: string | null | undefined; className?: string }) {
+  const label = roleLabel(role)
+  if (label === 'Member') return null
+
+  const getRoleStyles = (r: string | null | undefined) => {
+    switch (r) {
+      case 'super_admin':
+      case 'admin':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200/50 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20'
+      case 'shura':
+        return 'bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+      case 'imam':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200/50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+      default:
+        return 'bg-muted text-muted-foreground'
+    }
+  }
+
+  return (
+    <Badge 
+      variant="outline" 
+      className={cn(
+        "h-4.5 rounded-full px-2 py-0 text-[10px] font-semibold uppercase tracking-wider",
+        getRoleStyles(role),
+        className
+      )}
+    >
+      {label}
+    </Badge>
+  )
 }
 
 function isAnnouncement(post: FeedPost) {
@@ -382,8 +415,11 @@ function MemberRow({
         />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{member.full_name || 'Community member'}</p>
-        <p className="truncate text-xs text-muted-foreground">{member.profession || roleLabel(member.role) || 'Member'}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-medium">{member.full_name || 'Community member'}</p>
+          <RoleBadge role={member.role} />
+        </div>
+        <p className="truncate text-xs text-muted-foreground">{member.profession || 'Community Member'}</p>
       </div>
     </Link>
   )
@@ -1199,9 +1235,7 @@ export function EnhancedSocialFeed() {
 
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="rounded-full">
-                    {roleLabel(resolvedRole || profile?.role) || 'Member'}
-                  </Badge>
+                  <RoleBadge role={resolvedRole || profile?.role} />
                   {profileProfession ? <Badge variant="outline" className="rounded-full">{profileProfession}</Badge> : null}
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">
@@ -1653,7 +1687,7 @@ function PostCard({
                 <Link href={`/profile/${post.author_id}`} className="truncate text-sm font-semibold hover:underline">
                   {profileName}
                 </Link>
-                {displayRole ? <Badge variant="secondary" className="rounded-full text-[11px]">{displayRole}</Badge> : null}
+                <RoleBadge role={post.profiles?.role} />
                 <Badge variant="outline" className="rounded-full text-[11px]">{audienceLabel}</Badge>
                 {isAnnouncement(post) ? <Badge className="rounded-full bg-amber-500/10 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300">{post.pinned_at ? 'Pinned announcement' : 'Announcement'}</Badge> : null}
               </div>
