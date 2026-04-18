@@ -11,12 +11,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({})) as {
+      fullName?: string | null;
       username?: string | null;
+      mosqueId?: string | null;
+      role?: string | null;
     };
 
     const result = await provisionMemberAccount({
       userId,
+      fullName: body.fullName ?? null,
       username: body.username ?? null,
+      mosqueId: body.mosqueId ?? null,
+      role: body.role ?? null,
     });
 
     return NextResponse.json(result);

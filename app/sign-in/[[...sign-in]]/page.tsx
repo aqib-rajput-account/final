@@ -10,10 +10,25 @@ import { Spinner } from "@/components/ui/spinner";
 import { AuthUnavailableState } from "@/components/auth/auth-unavailable-state";
 import { GoogleIcon } from "@/components/auth/google-icon";
 import { hasClerkPublishableKey } from "@/lib/config";
+import { sanitizeRedirectPath } from "@/lib/auth/onboarding";
 import Link from "next/link";
 import { Building2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+
+function buildAuthLink(path: string, redirectTarget: string | null) {
+  if (!redirectTarget) {
+    return path;
+  }
+
+  return `${path}?redirect_url=${encodeURIComponent(redirectTarget)}`;
+}
 
 export default function SignInPage() {
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams.has("redirect_url")
+    ? sanitizeRedirectPath(searchParams.get("redirect_url"), "/feed")
+    : null;
+
   if (!hasClerkPublishableKey) {
     return (
       <AuthUnavailableState
@@ -37,7 +52,7 @@ export default function SignInPage() {
           <p className="text-muted-foreground mt-2">Sign in to your account</p>
         </div>
 
-        <SignIn.Root>
+        <SignIn.Root path="/sign-in" routing="path">
           <Clerk.Loading>
             {(isGlobalLoading) => (
               <>
@@ -97,7 +112,7 @@ export default function SignInPage() {
                       <p className="text-center text-sm text-muted-foreground">
                         Don&apos;t have an account?{" "}
                         <Link
-                          href="/sign-up"
+                          href={buildAuthLink("/sign-up", redirectTarget)}
                           className="font-medium text-primary hover:underline"
                         >
                           Sign up
@@ -131,6 +146,50 @@ export default function SignInPage() {
                       <SignIn.Action navigate="previous" asChild>
                         <Button variant="ghost" className="w-full">
                           Go back
+                        </Button>
+                      </SignIn.Action>
+                    </CardContent>
+                  </Card>
+                </SignIn.Step>
+
+                <SignIn.Step name="choose-session">
+                  <Card className="shadow-lg">
+                    <CardHeader className="space-y-1 pb-4">
+                      <CardTitle className="text-xl">Choose an account</CardTitle>
+                      <CardDescription>
+                        Pick the session you want to continue with.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <SignIn.SessionList>
+                        <ul className="space-y-3">
+                          <SignIn.SessionListItem>
+                            {({ session }) => (
+                              <SignIn.Action setActiveSession asChild>
+                                <Button variant="outline" className="h-auto w-full justify-between py-3">
+                                  <div className="text-left">
+                                    <div className="font-medium">
+                                      {session.firstName || session.lastName
+                                        ? `${session.firstName ?? ""} ${session.lastName ?? ""}`.trim()
+                                        : "Continue with this account"}
+                                    </div>
+                                    {session.identifier ? (
+                                      <div className="text-xs text-muted-foreground">
+                                        {session.identifier}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  Continue
+                                </Button>
+                              </SignIn.Action>
+                            )}
+                          </SignIn.SessionListItem>
+                        </ul>
+                      </SignIn.SessionList>
+
+                      <SignIn.Action navigate="start" asChild>
+                        <Button variant="ghost" className="w-full">
+                          Use another method
                         </Button>
                       </SignIn.Action>
                     </CardContent>
@@ -277,6 +336,24 @@ export default function SignInPage() {
                           </Clerk.Loading>
                         </Button>
                       </SignIn.Action>
+                    </CardContent>
+                  </Card>
+                </SignIn.Step>
+
+                <SignIn.Step name="sso-callback">
+                  <Card className="shadow-lg">
+                    <CardHeader className="space-y-1 pb-4">
+                      <CardTitle className="text-xl">Completing sign in</CardTitle>
+                      <CardDescription>
+                        Hold on while we finish connecting your Google account.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex justify-center">
+                        <Spinner className="h-6 w-6" />
+                      </div>
+                      <SignIn.Captcha />
+                      <Clerk.GlobalError className="text-sm text-destructive" />
                     </CardContent>
                   </Card>
                 </SignIn.Step>

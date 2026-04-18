@@ -10,6 +10,7 @@ import {
   hasSupabaseBrowserEnv,
 } from "@/lib/config";
 import { normalizeClerkRole } from "./clerk-rbac";
+import { evaluateProfileCompletion } from "./profile-completion";
 
 export type UserRole = "super_admin" | "admin" | "shura" | "imam" | "member";
 
@@ -49,6 +50,7 @@ type ProvisioningResponse = {
 };
 
 type RefreshProfileOptions = {
+  fullName?: string | null;
   username?: string | null;
 };
 
@@ -90,6 +92,15 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function getClerkCompletionUser(user: ReturnType<typeof useUser>["user"]) {
+  return {
+    firstName: user?.firstName ?? null,
+    lastName: user?.lastName ?? null,
+    fullName: user?.fullName ?? null,
+    primaryEmailAddress: user?.primaryEmailAddress?.emailAddress ?? null,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Defensive merge-safe guard: supports both consolidated and split runtime flags.
   const hasConfiguredAuth =
@@ -103,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
-  const { orgRole } = useClerkAuth();
+  const { orgRole, getToken } = useClerkAuth();
   const { user, isLoaded: isClerkLoaded, isSignedIn } = useUser();
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -133,12 +144,22 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      const body =
-        options?.username !== undefined ? { username: options.username ?? null } : {};
+      const body: RefreshProfileOptions = {};
+      if (options?.fullName !== undefined) {
+        body.fullName = options.fullName ?? null;
+      }
+      if (options?.username !== undefined) {
+        body.username = options.username ?? null;
+      }
+
+      const token = await getToken();
 
       const response = await fetch("/api/onboarding/provision", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(body),
         cache: "no-store",
       });
@@ -154,7 +175,6 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
           ? payload.suggestedUsername
           : null;
         setProvisioningError(message);
-        setNeedsOnboarding(true);
         setSuggestedUsername((current) => nextSuggestion ?? current);
         throw new ClientProvisioningError(message, response.status, nextSuggestion);
       }
@@ -199,8 +219,6 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
         await refreshProfile();
       } catch (error) {
         if (!cancelled) {
-          setProfile(null);
-          setNeedsOnboarding(true);
           if (error instanceof Error) {
             setProvisioningError(error.message);
           }
@@ -232,8 +250,10 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
+        const token = await getToken();
         await fetch("/api/users/status", {
           method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           keepalive: true,
           cache: "no-store",
         });
@@ -277,7 +297,15 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
           if (!payload.new) return;
           const nextProfile = payload.new as Profile;
           setProfile(nextProfile);
-          setNeedsOnboarding(!isNonEmptyString(nextProfile.username));
+          setNeedsOnboarding(
+            evaluateProfileCompletion(
+              {
+                fullName: nextProfile.full_name,
+                username: nextProfile.username,
+              },
+              getClerkCompletionUser(user)
+            ).needsOnboarding
+          );
         }
       )
       .subscribe();
@@ -285,7 +313,15 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isSignedIn, supabase, user?.id]);
+  }, [
+    isSignedIn,
+    supabase,
+    user?.fullName,
+    user?.firstName,
+    user?.id,
+    user?.lastName,
+    user?.primaryEmailAddress?.emailAddress,
+  ]);
 
   const signOut = async () => {
     await clerkSignOut();

@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
   "/events",
   "/events/(.*)",
   "/prayer-times",
+  "/onboarding",
 ]);
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
@@ -21,9 +22,13 @@ const isShuraRoute = createRouteMatcher(["/shura(.*)"]);
 
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
-    await auth.protect({
-      unauthenticatedUrl: "/sign-in",
-    });
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      await auth.protect();
+    } else {
+      await auth.protect({
+        unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
+      });
+    }
   }
 
   const { orgRole } = await auth();

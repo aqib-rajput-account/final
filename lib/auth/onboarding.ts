@@ -9,7 +9,7 @@ const PUBLIC_EXACT_PATHS = new Set([
   "/prayer-times",
 ]);
 
-const PUBLIC_PREFIXES = ["/sign-in", "/sign-up", "/mosques/", "/events/"];
+const PUBLIC_PREFIXES = ["/sign-in", "/sign-up", "/mosques/", "/events/", "/api/"];
 
 export function isPublicAppPath(pathname: string) {
   if (PUBLIC_EXACT_PATHS.has(pathname)) {

@@ -1,5 +1,12 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import {
+  evaluateProfileCompletion,
+  getExplicitClerkFullName,
+  getGeneratedProfilePlaceholderName,
+  isGeneratedProfileName,
+  normalizeFullName,
+} from "@/lib/auth/profile-completion";
 
 export const DEFAULT_ORG_NAME = "MasjidConnect";
 export const DEFAULT_ORG_SLUG = "masjidconnect";
@@ -103,32 +110,6 @@ function pickPrimaryItem<T extends { id?: string | null }>(
   return items[0] ?? null;
 }
 
-function toTitleCase(input: string) {
-  return input
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function humanizeIdentifier(input: string | null | undefined) {
-  if (!isNonEmptyString(input)) {
-    return null;
-  }
-
-  const collapsed = input
-    .replace(/[@].*$/, "")
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!collapsed) {
-    return null;
-  }
-
-  return toTitleCase(collapsed);
-}
-
 function normalizeUsername(input: string | null | undefined) {
   const normalized = (input ?? "")
     .trim()
@@ -148,12 +129,16 @@ function deriveClerkDefaults(clerkUser: ClerkUserLike) {
   const primaryEmail = pickPrimaryItem(clerkUser.emailAddresses, clerkUser.primaryEmailAddressId);
   const primaryPhone = pickPrimaryItem(clerkUser.phoneNumbers, clerkUser.primaryPhoneNumberId);
   const email = primaryEmail?.emailAddress?.trim() || null;
+  const identity = {
+    firstName: clerkUser.firstName ?? null,
+    lastName: clerkUser.lastName ?? null,
+    fullName: clerkUser.fullName ?? null,
+    primaryEmailAddress: email,
+  };
+  const explicitFullName = getExplicitClerkFullName(identity);
+  const generatedFullName = getGeneratedProfilePlaceholderName(identity);
   const emailLocalPart = email?.split("@")[0] ?? null;
-  const fullName =
-    [clerkUser.firstName, clerkUser.lastName].filter(isNonEmptyString).join(" ").trim() ||
-    (isNonEmptyString(clerkUser.fullName) ? clerkUser.fullName.trim() : "") ||
-    humanizeIdentifier(emailLocalPart) ||
-    null;
+  const fullName = explicitFullName ?? generatedFullName ?? null;
   const usernameSeed =
     normalizeUsername(clerkUser.username) ||
     normalizeUsername(fullName?.replace(/\s+/g, "_")) ||
@@ -166,6 +151,8 @@ function deriveClerkDefaults(clerkUser: ClerkUserLike) {
   return {
     email,
     fullName,
+    explicitFullName,
+    generatedFullName,
     avatarUrl: clerkUser.imageUrl?.trim() || null,
     phone: primaryPhone?.phoneNumber?.trim() || null,
     isVerified,
@@ -321,6 +308,9 @@ async function ensureDefaultOrganization(clerk: Awaited<ReturnType<typeof clerkC
 export async function provisionMemberAccount(args: {
   userId: string;
   username?: string | null;
+  fullName?: string | null;
+  mosqueId?: string | null;
+  role?: string | null;
 }) {
   const supabase = createSupabaseAdmin();
   const clerk = await clerkClient();
@@ -366,15 +356,29 @@ export async function provisionMemberAccount(args: {
     requestedUsername: args.username ?? null,
     suggestedUsername,
   });
+  const requestedFullName = normalizeFullName(args.fullName ?? null);
+  const existingFullName = normalizeFullName(profile?.full_name ?? null);
+  const clerkIdentity = {
+    firstName: clerkUser.firstName ?? null,
+    lastName: clerkUser.lastName ?? null,
+    fullName: clerkUser.fullName ?? null,
+    primaryEmailAddress: defaults.email,
+  };
+  const existingNameIsGenerated = isGeneratedProfileName(existingFullName, clerkIdentity);
+  const resolvedFullName =
+    requestedFullName ??
+    (existingFullName && !existingNameIsGenerated
+      ? existingFullName
+      : defaults.explicitFullName ?? existingFullName ?? defaults.generatedFullName ?? null);
 
   // 3. Prepare Payload
+  const requestedRole = args.role && isKnownRole(args.role) ? args.role : null;
+  const resolvedRole = requestedRole ?? (isKnownRole(profile?.role) ? profile.role : "member");
+  
   const nextProfilePayload = {
     id: args.userId,
     email: defaults.email ?? profile?.email ?? null,
-    full_name:
-      (isNonEmptyString(profile?.full_name) ? profile.full_name.trim() : null) ??
-      defaults.fullName ??
-      null,
+    full_name: resolvedFullName,
     username:
       requestedUsername ??
       (isNonEmptyString(profile?.username) ? profile.username.trim() : null) ??
@@ -387,7 +391,8 @@ export async function provisionMemberAccount(args: {
       (isNonEmptyString(profile?.phone) ? profile.phone.trim() : null) ??
       defaults.phone ??
       null,
-    role: isKnownRole(profile?.role) ? profile.role : "member",
+    mosque_id: args.mosqueId ?? profile?.mosque_id ?? null,
+    role: resolvedRole,
     is_verified: Boolean(profile?.is_verified) || defaults.isVerified,
     is_active: typeof profile?.is_active === "boolean" ? profile.is_active : true,
     updated_at: new Date().toISOString(),
@@ -423,13 +428,20 @@ export async function provisionMemberAccount(args: {
   }
 
   const normalizedProfile = provisionedProfile as ProvisionedProfile;
+  const completion = evaluateProfileCompletion(
+    {
+      fullName: normalizedProfile.full_name,
+      username: normalizedProfile.username,
+    },
+    clerkIdentity
+  );
 
   return {
     profile: normalizedProfile,
     suggestedUsername: isNonEmptyString(normalizedProfile.username)
       ? normalizedProfile.username
       : suggestedUsername,
-    needsOnboarding: !isNonEmptyString(normalizedProfile.username),
+    needsOnboarding: completion.needsOnboarding,
     defaultOrgName: organizationInfo.organizationName,
     orgRole: organizationInfo.orgRole,
   } satisfies ProvisioningResult;
