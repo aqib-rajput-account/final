@@ -42,6 +42,110 @@ export class AdminServiceError extends Error {
   }
 }
 
+const PROFILE_ROLE_ORDER = [
+  "member",
+  "imam",
+  "shura",
+  "admin",
+  "super_admin",
+] as const;
+
+type ManagedProfileRole = (typeof PROFILE_ROLE_ORDER)[number];
+
+function isManagedProfileRole(value: unknown): value is ManagedProfileRole {
+  return (
+    value === "member" ||
+    value === "imam" ||
+    value === "shura" ||
+    value === "admin" ||
+    value === "super_admin"
+  );
+}
+
+function getProfileRoleLevel(role: ManagedProfileRole): number {
+  return PROFILE_ROLE_ORDER.indexOf(role);
+}
+
+function assertCanManageProfileMutation(input: {
+  session: AdminSession;
+  targetProfile: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+}): void {
+  const currentRole = input.session.role;
+  const targetRole = isManagedProfileRole(input.targetProfile.role)
+    ? input.targetProfile.role
+    : "member";
+  const targetUserId =
+    typeof input.targetProfile.id === "string" ? input.targetProfile.id : null;
+  const nextRole = isManagedProfileRole(input.payload?.role)
+    ? input.payload.role
+    : undefined;
+
+  if (!targetUserId) {
+    throw new AdminServiceError("Profile not found", 404);
+  }
+
+  if (targetUserId === input.session.userId && nextRole && nextRole !== targetRole) {
+    throw new AdminServiceError("You cannot change your own role", 403);
+  }
+
+  if (currentRole !== "super_admin" && currentRole !== "admin") {
+    throw new AdminServiceError("Forbidden", 403);
+  }
+
+  if (targetRole === "super_admin" && currentRole !== "super_admin") {
+    throw new AdminServiceError("Only super admins can manage super admins", 403);
+  }
+
+  if (currentRole === "admin" && getProfileRoleLevel(targetRole) >= getProfileRoleLevel("admin")) {
+    throw new AdminServiceError("Admins can only manage users below admin", 403);
+  }
+
+  if (nextRole === "super_admin" && currentRole !== "super_admin") {
+    throw new AdminServiceError("Only super admins can assign super admin", 403);
+  }
+
+  if (nextRole && currentRole === "admin" && getProfileRoleLevel(nextRole) >= getProfileRoleLevel("admin")) {
+    throw new AdminServiceError("Admins can only assign roles below admin", 403);
+  }
+}
+
+function parseFilterValue(field: AdminFieldConfig, rawValue: string): unknown {
+  if (field.type === "boolean") {
+    return rawValue === "true";
+  }
+
+  if (field.type === "number") {
+    const numeric = Number(rawValue);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+  }
+
+  return rawValue;
+}
+
+async function loadExistingProfileRecord(
+  supabase: SupabaseServerClient,
+  profileId: string
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new AdminServiceError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new AdminServiceError("Profile not found", 404);
+  }
+
+  return data as Record<string, unknown>;
+}
+
 function isMissingRelationError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -360,6 +464,7 @@ export async function listAdminEntityRecords(input: {
   limit?: number;
   offset?: number;
   search?: string | null;
+  filters?: Record<string, string>;
 }): Promise<AdminListResponse> {
   const definition = resolveDefinition(input.entityKey);
   const supabase = await createClient();
@@ -405,6 +510,17 @@ export async function listAdminEntityRecords(input: {
         .map((column) => `${column}.ilike.%${search}%`)
         .join(",")
     );
+  }
+
+  for (const [filterKey, filterValue] of Object.entries(input.filters ?? {})) {
+    if (!filterValue) continue;
+    const field = definition.formFields.find((entry) => entry.key === filterKey);
+    if (!field) continue;
+    if (field.type === "json" || field.type === "textarea" || field.type === "tags") {
+      continue;
+    }
+
+    query = query.eq(filterKey, parseFilterValue(field, filterValue));
   }
 
   const { data, error, count } = await query;
@@ -683,6 +799,15 @@ export async function updateAdminEntityRecord(input: {
     "update"
   );
 
+  if (definition.key === "profiles") {
+    const existingProfile = await loadExistingProfileRecord(supabase, input.id);
+    assertCanManageProfileMutation({
+      session: input.session,
+      targetProfile: existingProfile,
+      payload: mutationPayload,
+    });
+  }
+
   const { data, error } = await supabase
     .from(definition.table)
     .update(mutationPayload)
@@ -731,6 +856,19 @@ export async function deleteAdminEntityRecord(input: {
 
   if (definition.singleton) {
     throw new AdminServiceError("Singleton settings cannot be deleted", 400);
+  }
+
+  if (definition.key === "profiles") {
+    const existingProfile = await loadExistingProfileRecord(supabase, input.id);
+
+    if (input.id === input.session.userId) {
+      throw new AdminServiceError("You cannot delete your own profile", 403);
+    }
+
+    assertCanManageProfileMutation({
+      session: input.session,
+      targetProfile: existingProfile,
+    });
   }
 
   const { data, error } = await supabase

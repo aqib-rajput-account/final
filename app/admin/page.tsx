@@ -20,8 +20,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
 import type { AdminEntitiesResponse, AdminEntityKey } from "@/lib/admin/types";
+import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
 
 function getEntityHref(entityKey: AdminEntityKey): string {
   switch (entityKey) {
@@ -99,7 +99,7 @@ export default function AdminDashboardPage() {
   const enabledModules = Object.values(data?.moduleSettings ?? {}).filter(Boolean).length;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +141,7 @@ export default function AdminDashboardPage() {
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "…" : entityCount}</div>
+            <div className="text-2xl font-bold">{loading ? "..." : entityCount}</div>
             <p className="text-xs text-muted-foreground">
               Registry-backed modules the current role can manage
             </p>
@@ -153,7 +153,7 @@ export default function AdminDashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "…" : totalRecords}</div>
+            <div className="text-2xl font-bold">{loading ? "..." : totalRecords}</div>
             <p className="text-xs text-muted-foreground">
               Current rows across the visible admin entities
             </p>
@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
             <Zap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "…" : enabledModules}</div>
+            <div className="text-2xl font-bold">{loading ? "..." : enabledModules}</div>
             <p className="text-xs text-muted-foreground">
               Controlled from the global settings singleton
             </p>
@@ -194,7 +194,10 @@ export default function AdminDashboardPage() {
               new admin registry.
             </CardDescription>
           </div>
-          <Button variant="outline" onClick={() => setRefreshTick((current) => current + 1)}>
+          <Button
+            variant="outline"
+            onClick={() => setRefreshTick((current) => current + 1)}
+          >
             Refresh
           </Button>
         </CardHeader>
@@ -216,7 +219,7 @@ export default function AdminDashboardPage() {
                     <div className="flex items-center justify-between gap-3">
                       <CardTitle className="text-base">{entity.label}</CardTitle>
                       <Badge variant="secondary">
-                        {typeof entity.count === "number" ? entity.count : "—"}
+                        {typeof entity.count === "number" ? entity.count : "-"}
                       </Badge>
                     </div>
                     <CardDescription>{entity.description}</CardDescription>

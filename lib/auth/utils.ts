@@ -3,7 +3,7 @@ import { type UserRole, ROLE_HIERARCHY, getRoleLevel, hasRoleOrHigher } from "./
 // Define route access requirements
 export const ROUTE_PERMISSIONS: Record<string, UserRole[]> = {
   "/admin": ["admin", "super_admin"],
-  "/admin/users": ["super_admin"],
+  "/admin/users": ["admin", "super_admin"],
   "/admin/mosques": ["admin", "super_admin"],
   "/admin/events": ["admin", "super_admin"],
   "/admin/finance": ["admin", "super_admin"],
@@ -16,9 +16,9 @@ export const ROUTE_PERMISSIONS: Record<string, UserRole[]> = {
 
 // Define permissions for specific actions
 export const ACTION_PERMISSIONS: Record<string, UserRole[]> = {
-  "users:manage": ["super_admin"],
+  "users:manage": ["admin", "super_admin"],
   "users:view": ["admin", "super_admin"],
-  "roles:assign": ["super_admin"],
+  "roles:assign": ["admin", "super_admin"],
   "mosque:create": ["admin", "super_admin"],
   "mosque:edit": ["admin", "super_admin"],
   "mosque:delete": ["super_admin"],

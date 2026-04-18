@@ -4,11 +4,14 @@ import {
   startTransition,
   useDeferredValue,
   useEffect,
+  useMemo,
   useState,
   type ChangeEvent,
 } from "react";
 import {
+  Activity,
   Database,
+  Filter,
   Loader2,
   Pencil,
   Plus,
@@ -18,6 +21,18 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import type {
+  AdminActivityEntry,
+  AdminActivityResponse,
+  AdminEntityKey,
+  AdminFieldConfig,
+  AdminItemResponse,
+  AdminListResponse,
+  AdminLookupOption,
+} from "@/lib/admin/types";
+import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
+import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,17 +69,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
-import type {
-  AdminEntitiesResponse,
-  AdminEntityKey,
-  AdminEntitySummary,
-  AdminFieldConfig,
-  AdminItemResponse,
-  AdminListResponse,
-  AdminLookupOption,
-} from "@/lib/admin/types";
-import { cn } from "@/lib/utils";
+
+type ControlCenterEntity = {
+  key: AdminEntityKey;
+  label: string;
+  singularLabel: string;
+  description: string;
+  primaryKey: string;
+  listFields: string[];
+  formFields: AdminFieldConfig[];
+  searchPlaceholder?: string;
+  singleton?: boolean;
+  singletonId?: string;
+  capability: {
+    read: boolean;
+    create: boolean;
+    update: boolean;
+    delete: boolean;
+  };
+  count: number | null;
+};
 
 interface AdminControlCenterProps {
   title?: string;
@@ -74,6 +98,7 @@ interface AdminControlCenterProps {
 }
 
 const EMPTY_SELECT_VALUE = "__empty__";
+const ALL_FILTER_VALUE = "__all__";
 
 function formatDateForInput(value: unknown): string {
   if (!value) return "";
@@ -84,8 +109,22 @@ function formatDateForInput(value: unknown): string {
     .slice(0, 16);
 }
 
+function formatEntityLabel(entityKey: string): string {
+  return entityKey
+    .split("_")
+    .join(" ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatActivityLabel(item: AdminActivityEntry): string {
+  const verb = item.eventType.split(".").at(-1) ?? "updated";
+  return `${item.actorName ?? item.actorUserId} ${verb} ${formatEntityLabel(
+    item.entityType
+  )}`;
+}
+
 function buildFormValues(
-  entity: AdminEntitySummary,
+  entity: ControlCenterEntity,
   item?: Record<string, unknown> | null
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -131,7 +170,7 @@ function formatCellValue(
   lookups: Record<string, AdminLookupOption[]>
 ): string {
   if (value == null || value === "") {
-    return "—";
+    return "-";
   }
 
   if (field?.lookup) {
@@ -169,20 +208,41 @@ function formatCellValue(
   return nextValue.length > 80 ? `${nextValue.slice(0, 77)}...` : nextValue;
 }
 
+function getFieldOptions(
+  field: AdminFieldConfig,
+  lookups: Record<string, AdminLookupOption[]>
+): AdminLookupOption[] {
+  if (field.options?.length) {
+    return field.options;
+  }
+
+  if (field.lookup) {
+    return lookups[field.lookup] ?? [];
+  }
+
+  return [];
+}
 export function AdminControlCenter({
   title = "Control Center",
   description = "Manage live application entities, settings, and permissions from one reusable admin surface.",
   allowedEntityKeys,
   initialEntityKey,
 }: AdminControlCenterProps) {
-  const [metadata, setMetadata] = useState<AdminEntitiesResponse | null>(null);
+  const {
+    data: metadata,
+    loading: loadingMetadata,
+    error: metadataError,
+    refresh: refreshMetadata,
+  } = useAdminPanelMetadata();
   const [selectedEntityKey, setSelectedEntityKey] = useState<AdminEntityKey | null>(
     initialEntityKey ?? null
   );
   const [entityData, setEntityData] = useState<AdminListResponse | null>(null);
-  const [loadingMetadata, setLoadingMetadata] = useState(true);
+  const [activity, setActivity] = useState<AdminActivityEntry[]>([]);
   const [loadingEntity, setLoadingEntity] = useState(false);
+  const [loadingActivity, setLoadingActivity] = useState(false);
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<Record<string, string>>({});
   const [refreshTick, setRefreshTick] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -190,55 +250,36 @@ export function AdminControlCenter({
   const [saving, setSaving] = useState(false);
 
   const deferredSearch = useDeferredValue(search);
-  const availableEntities = (metadata?.entities ?? []).filter(
-    (entity) => !allowedEntityKeys || allowedEntityKeys.includes(entity.key)
+  const availableEntities = useMemo(
+    () =>
+      (metadata?.entities ?? []).filter(
+        (entity) => !allowedEntityKeys || allowedEntityKeys.includes(entity.key)
+      ),
+    [allowedEntityKeys, metadata?.entities]
   );
   const selectedEntity =
     availableEntities.find((entity) => entity.key === selectedEntityKey) ?? null;
   const activeLookups = entityData?.lookups ?? metadata?.lookups ?? {};
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadMetadata() {
-      setLoadingMetadata(true);
-      try {
-        const response = await fetch("/api/admin/entities", { cache: "no-store" });
-        const payload = (await response.json().catch(() => ({}))) as
-          | AdminEntitiesResponse
-          | { error?: string };
-
-        if (!response.ok) {
-          throw new Error(
-            ("error" in payload ? payload.error : undefined) ||
-              "Failed to load admin metadata"
-          );
-        }
-
-        if (!cancelled) {
-          setMetadata(payload as AdminEntitiesResponse);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Failed to load admin metadata"
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingMetadata(false);
-        }
-      }
-    }
-
-    void loadMetadata();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshTick]);
+  const filterFields = useMemo(
+    () =>
+      (selectedEntity?.formFields ?? []).filter(
+        (field) =>
+          !field.readOnly &&
+          !field.hiddenInList &&
+          (field.type === "select" || field.type === "boolean")
+      ),
+    [selectedEntity]
+  );
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const enabledActionCount = selectedEntity
+    ? Object.values(selectedEntity.capability).filter(Boolean).length
+    : 0;
+  const canOpenPrimaryEditor = Boolean(
+    selectedEntity &&
+      (selectedEntity.singleton
+        ? selectedEntity.capability.update || selectedEntity.capability.create
+        : selectedEntity.capability.create)
+  );
 
   useEffect(() => {
     if (!availableEntities.length) {
@@ -266,6 +307,11 @@ export function AdminControlCenter({
   }, [availableEntities, initialEntityKey, selectedEntityKey]);
 
   useEffect(() => {
+    setSearch("");
+    setFilters({});
+  }, [selectedEntityKey]);
+
+  useEffect(() => {
     if (!selectedEntity) {
       setEntityData(null);
       return;
@@ -284,6 +330,12 @@ export function AdminControlCenter({
 
         if (!entity.singleton && deferredSearch.trim()) {
           params.set("search", deferredSearch.trim());
+        }
+
+        for (const [filterKey, filterValue] of Object.entries(filters)) {
+          if (filterValue) {
+            params.set(filterKey, filterValue);
+          }
         }
 
         const response = await fetch(
@@ -323,18 +375,74 @@ export function AdminControlCenter({
     return () => {
       cancelled = true;
     };
-  }, [selectedEntity, deferredSearch, refreshTick]);
+  }, [selectedEntity, deferredSearch, filters, refreshTick]);
+
+  useEffect(() => {
+    if (!selectedEntity) {
+      setActivity([]);
+      return;
+    }
+
+    const entity = selectedEntity;
+    let cancelled = false;
+
+    async function loadActivity() {
+      setLoadingActivity(true);
+      try {
+        const response = await fetch(
+          `/api/admin/activity?limit=6&entityType=${entity.key}`,
+          { cache: "no-store" }
+        );
+        const payload = (await response.json().catch(() => ({}))) as
+          | AdminActivityResponse
+          | { error?: string };
+
+        if (!response.ok) {
+          throw new Error(
+            ("error" in payload ? payload.error : undefined) ||
+              "Failed to load activity"
+          );
+        }
+
+        if (!cancelled) {
+          setActivity((payload as AdminActivityResponse).items);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(
+            error instanceof Error ? error.message : "Failed to load activity"
+          );
+          setActivity([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingActivity(false);
+        }
+      }
+    }
+
+    void loadActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntity, refreshTick]);
 
   useRealtimeGateway({
     enabled: Boolean(metadata?.realtimeFeed),
     feedStreamId: metadata?.realtimeFeed,
     onEvent: (event) => {
-      if (!selectedEntityKey) return;
+      if (!selectedEntityKey) {
+        refreshMetadata();
+        return;
+      }
+
       if (event.entityType !== selectedEntityKey && event.entityType !== "settings") {
         return;
       }
 
       startTransition(() => {
+        refreshMetadata();
         setRefreshTick((current) => current + 1);
       });
     },
@@ -359,11 +467,43 @@ export function AdminControlCenter({
     setDialogOpen(true);
   }
 
+  function openPrimaryDialog() {
+    if (!selectedEntity) return;
+
+    if (selectedEntity.singleton) {
+      const currentItem = entityData?.items[0];
+      if (currentItem) {
+        openEditDialog(currentItem);
+        return;
+      }
+    }
+
+    openCreateDialog();
+  }
+
   function updateFormValue(key: string, value: unknown) {
     setFormValues((current) => ({
       ...current,
       [key]: value,
     }));
+  }
+
+  function updateFilterValue(key: string, value: string) {
+    setFilters((current) => {
+      const next = { ...current };
+      if (!value) {
+        delete next[key];
+        return next;
+      }
+
+      next[key] = value;
+      return next;
+    });
+  }
+
+  function clearAllFilters() {
+    setSearch("");
+    setFilters({});
   }
 
   async function handleDelete(item: Record<string, unknown>) {
@@ -393,6 +533,7 @@ export function AdminControlCenter({
 
       toast.success(`${selectedEntity.singularLabel} deleted`);
       startTransition(() => {
+        refreshMetadata();
         setRefreshTick((current) => current + 1);
       });
     } catch (error) {
@@ -442,6 +583,7 @@ export function AdminControlCenter({
       );
       setDialogOpen(false);
       startTransition(() => {
+        refreshMetadata();
         setRefreshTick((current) => current + 1);
       });
     } catch (error) {
@@ -456,9 +598,7 @@ export function AdminControlCenter({
     const disabled = Boolean(field.readOnly);
     const selectValue =
       typeof value === "string" && value.length > 0 ? value : EMPTY_SELECT_VALUE;
-    const lookupOptions =
-      field.lookup != null ? activeLookups[field.lookup] ?? [] : [];
-    const options = field.options ?? lookupOptions;
+    const options = getFieldOptions(field, activeLookups);
 
     if (field.type === "textarea" || field.type === "json") {
       return (
@@ -543,7 +683,7 @@ export function AdminControlCenter({
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -553,8 +693,13 @@ export function AdminControlCenter({
             </Badge>
             <Badge variant="secondary" className="gap-1">
               <Shield className="h-3.5 w-3.5" />
-              RBAC
+              Registry CRUD
             </Badge>
+            {metadata?.settingsWritable ? (
+              <Badge variant="secondary">Settings Ready</Badge>
+            ) : (
+              <Badge variant="destructive">Migration Required</Badge>
+            )}
           </div>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
@@ -566,6 +711,7 @@ export function AdminControlCenter({
             variant="outline"
             onClick={() =>
               startTransition(() => {
+                refreshMetadata();
                 setRefreshTick((current) => current + 1);
               })
             }
@@ -573,15 +719,72 @@ export function AdminControlCenter({
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
-          {selectedEntity?.capability.create && (
-            <Button onClick={openCreateDialog}>
+          {canOpenPrimaryEditor && (
+            <Button onClick={openPrimaryDialog}>
               <Plus className="mr-2 h-4 w-4" />
-              {selectedEntity.singleton
+              {selectedEntity?.singleton
                 ? `Edit ${selectedEntity.singularLabel}`
-                : `Add ${selectedEntity.singularLabel}`}
+                : `Add ${selectedEntity?.singularLabel ?? "Record"}`}
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Visible Entities</CardTitle>
+            <Database className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loadingMetadata ? "..." : availableEntities.length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Registry-backed modules available for this view
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Selected Records</CardTitle>
+            <Filter className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loadingEntity ? "..." : entityData?.total ?? 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Filtered rows for the active entity
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Enabled Actions</CardTitle>
+            <Shield className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{enabledActionCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Current role permissions for the active entity
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loadingActivity ? "..." : activity.length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Latest realtime mutations for this entity
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -591,8 +794,8 @@ export function AdminControlCenter({
             Managed Entities
           </CardTitle>
           <CardDescription>
-            The registry below is what powers the generic admin CRUD and permission
-            checks across the panel.
+            The registry below drives the shared CRUD layer, policy checks, and
+            module visibility across the admin experience.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -600,6 +803,10 @@ export function AdminControlCenter({
             <div className="flex items-center justify-center py-8 text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading entities...
+            </div>
+          ) : metadataError ? (
+            <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+              {metadataError}
             </div>
           ) : availableEntities.length === 0 ? (
             <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
@@ -612,7 +819,6 @@ export function AdminControlCenter({
                   key={entity.key}
                   type="button"
                   onClick={() => {
-                    setSearch("");
                     setSelectedEntityKey(entity.key);
                   }}
                   className={cn(
@@ -639,137 +845,247 @@ export function AdminControlCenter({
       </Card>
 
       {selectedEntity && (
-        <Card>
-          <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-1">
-              <CardTitle>{selectedEntity.label}</CardTitle>
-              <CardDescription>{selectedEntity.description}</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={selectedEntity.capability.read ? "secondary" : "outline"}>
-                Read {selectedEntity.capability.read ? "On" : "Off"}
-              </Badge>
-              <Badge
-                variant={selectedEntity.capability.create ? "secondary" : "outline"}
-              >
-                Create {selectedEntity.capability.create ? "On" : "Off"}
-              </Badge>
-              <Badge
-                variant={selectedEntity.capability.update ? "secondary" : "outline"}
-              >
-                Update {selectedEntity.capability.update ? "On" : "Off"}
-              </Badge>
-              <Badge
-                variant={selectedEntity.capability.delete ? "secondary" : "outline"}
-              >
-                Delete {selectedEntity.capability.delete ? "On" : "Off"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!selectedEntity.singleton && (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={
-                    selectedEntity.searchPlaceholder ??
-                    `Search ${selectedEntity.label.toLowerCase()}`
-                  }
-                  className="sm:max-w-md"
-                />
-                <p className="text-sm text-muted-foreground">
-                  Realtime updates automatically refresh the current entity list.
-                </p>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_360px]">
+          <Card>
+            <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-1">
+                <CardTitle>{selectedEntity.label}</CardTitle>
+                <CardDescription>{selectedEntity.description}</CardDescription>
               </div>
-            )}
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={selectedEntity.capability.read ? "secondary" : "outline"}>
+                  Read {selectedEntity.capability.read ? "On" : "Off"}
+                </Badge>
+                <Badge
+                  variant={selectedEntity.capability.create ? "secondary" : "outline"}
+                >
+                  Create {selectedEntity.capability.create ? "On" : "Off"}
+                </Badge>
+                <Badge
+                  variant={selectedEntity.capability.update ? "secondary" : "outline"}
+                >
+                  Update {selectedEntity.capability.update ? "On" : "Off"}
+                </Badge>
+                <Badge
+                  variant={selectedEntity.capability.delete ? "secondary" : "outline"}
+                >
+                  Delete {selectedEntity.capability.delete ? "On" : "Off"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!selectedEntity.singleton && (
+                <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <Input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder={
+                        selectedEntity.searchPlaceholder ??
+                        `Search ${selectedEntity.label.toLowerCase()}`
+                      }
+                      className="lg:max-w-md"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {filterFields.map((field) => {
+                        const options = getFieldOptions(field, activeLookups);
+                        const filterValue = filters[field.key] ?? "";
 
-            {loadingEntity ? (
-              <div className="flex items-center justify-center py-10 text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading {selectedEntity.label.toLowerCase()}...
-              </div>
-            ) : !entityData || entityData.items.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No {selectedEntity.label.toLowerCase()} found.
-              </div>
-            ) : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {selectedEntity.listFields.map((fieldKey) => {
-                        const field = selectedEntity.formFields.find(
-                          (entry) => entry.key === fieldKey
-                        );
+                        if (field.type === "boolean") {
+                          return (
+                            <Select
+                              key={field.key}
+                              value={filterValue || ALL_FILTER_VALUE}
+                              onValueChange={(value) =>
+                                updateFilterValue(
+                                  field.key,
+                                  value === ALL_FILTER_VALUE ? "" : value
+                                )
+                              }
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder={field.label} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={ALL_FILTER_VALUE}>
+                                  All {field.label}
+                                </SelectItem>
+                                <SelectItem value="true">Enabled</SelectItem>
+                                <SelectItem value="false">Disabled</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          );
+                        }
+
+                        if (!options.length) {
+                          return null;
+                        }
+
                         return (
-                          <TableHead key={fieldKey}>
-                            {field?.label ?? fieldKey}
-                          </TableHead>
+                          <Select
+                            key={field.key}
+                            value={filterValue || ALL_FILTER_VALUE}
+                            onValueChange={(value) =>
+                              updateFilterValue(
+                                field.key,
+                                value === ALL_FILTER_VALUE ? "" : value
+                              )
+                            }
+                          >
+                            <SelectTrigger className="w-[180px]">
+                              <SelectValue placeholder={field.label} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={ALL_FILTER_VALUE}>
+                                All {field.label}
+                              </SelectItem>
+                              {options.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         );
                       })}
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {entityData.items.map((item) => (
-                      <TableRow
-                        key={String(
-                          item[selectedEntity.primaryKey] ?? selectedEntity.singletonId
-                        )}
-                      >
+                      {(search || activeFilterCount > 0) && (
+                        <Button variant="ghost" onClick={clearAllFilters}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Realtime events refresh the list automatically. Filters are
+                    applied through the generic admin API.
+                  </p>
+                </div>
+              )}
+
+              {loadingEntity ? (
+                <div className="flex items-center justify-center py-10 text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading {selectedEntity.label.toLowerCase()}...
+                </div>
+              ) : !entityData || entityData.items.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                  No {selectedEntity.label.toLowerCase()} found.
+                </div>
+              ) : (
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
                         {selectedEntity.listFields.map((fieldKey) => {
                           const field = selectedEntity.formFields.find(
                             (entry) => entry.key === fieldKey
                           );
                           return (
-                            <TableCell key={fieldKey}>
-                              {formatCellValue(field, item[fieldKey], activeLookups)}
-                            </TableCell>
+                            <TableHead key={fieldKey}>
+                              {field?.label ?? fieldKey}
+                            </TableHead>
                           );
                         })}
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {selectedEntity.capability.update && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openEditDialog(item)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {selectedEntity.capability.delete &&
-                              !selectedEntity.singleton && (
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {entityData.items.map((item) => (
+                        <TableRow
+                          key={String(
+                            item[selectedEntity.primaryKey] ??
+                              selectedEntity.singletonId ??
+                              selectedEntity.key
+                          )}
+                        >
+                          {selectedEntity.listFields.map((fieldKey) => {
+                            const field = selectedEntity.formFields.find(
+                              (entry) => entry.key === fieldKey
+                            );
+                            return (
+                              <TableCell key={fieldKey}>
+                                {formatCellValue(field, item[fieldKey], activeLookups)}
+                              </TableCell>
+                            );
+                          })}
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              {selectedEntity.capability.update && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => handleDelete(item)}
+                                  onClick={() => openEditDialog(item)}
                                 >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
                               )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                              {selectedEntity.capability.delete &&
+                                !selectedEntity.singleton && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDelete(item)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Entity Activity</CardTitle>
+              <CardDescription>
+                The latest admin mutations for {selectedEntity.label.toLowerCase()}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loadingActivity ? (
+                <div className="flex items-center justify-center py-6 text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading activity...
+                </div>
+              ) : activity.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  No recent activity for this entity yet.
+                </div>
+              ) : (
+                activity.map((item) => (
+                  <div key={item.eventId} className="rounded-xl border px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{formatActivityLabel(item)}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedEntity.singularLabel} ID: {item.entityId}
+                        </p>
+                      </div>
+                      <Badge variant="outline">
+                        {new Date(item.occurredAt).toLocaleTimeString()}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingItemId ? "Edit" : "Create"} {selectedEntity?.singularLabel}
             </DialogTitle>
-            <DialogDescription>
-              {selectedEntity?.description}
-            </DialogDescription>
+            <DialogDescription>{selectedEntity?.description}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             {selectedEntity?.formFields.map((field) => (

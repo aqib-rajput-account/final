@@ -121,3 +121,18 @@ export interface AdminItemResponse {
   item: Record<string, unknown> | null;
   lookups: Record<string, AdminLookupOption[]>;
 }
+
+export interface AdminActivityEntry {
+  eventId: number;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  actorUserId: string;
+  actorName: string | null;
+  occurredAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AdminActivityResponse {
+  items: AdminActivityEntry[];
+}

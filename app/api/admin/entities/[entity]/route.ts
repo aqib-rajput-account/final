@@ -28,6 +28,11 @@ export async function GET(
     const limit = Number(url.searchParams.get("limit") ?? 25);
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const search = url.searchParams.get("search");
+    const filters = Object.fromEntries(
+      [...url.searchParams.entries()].filter(
+        ([key]) => !["limit", "offset", "search"].includes(key)
+      )
+    );
 
     const response = await listAdminEntityRecords({
       session,
@@ -35,6 +40,7 @@ export async function GET(
       limit,
       offset,
       search,
+      filters,
     });
 
     return NextResponse.json(response);
@@ -83,4 +89,3 @@ export async function POST(
     );
   }
 }
-
