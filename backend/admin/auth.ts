@@ -62,7 +62,7 @@ export async function resolveAdminSession(
 }
 
 export function canAccessAdminSurface(role: AdminUserRole): boolean {
-  return role === "admin" || role === "super_admin" || role === "shura";
+  return role === "admin" || role === "super_admin" || role === "shura" || role === "imam";
 }
 
 function includesRole(roles: AdminUserRole[], role: AdminUserRole): boolean {
@@ -112,4 +112,3 @@ export function assertEntityAction(
 
   throw new AdminAuthorizationError("Forbidden", 403);
 }
-

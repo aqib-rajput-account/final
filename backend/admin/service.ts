@@ -16,7 +16,9 @@ import {
   ADMIN_REALTIME_FEED,
   ADMIN_SETTINGS_SINGLETON_ID,
   createDefaultAdminSettingsRecord,
+  getImamRealtimeFeed,
   normalizeAdminSettingsRecord,
+  resolveManagementRealtimeFeed,
 } from "./defaults";
 import {
   AdminAuthorizationError,
@@ -52,6 +54,17 @@ const PROFILE_ROLE_ORDER = [
 
 type ManagedProfileRole = (typeof PROFILE_ROLE_ORDER)[number];
 
+const IMAM_MOSQUE_SCOPED_ENTITY_KEYS = new Set<AdminEntityKey>([
+  "mosques",
+  "prayer_times",
+  "events",
+  "announcements",
+  "imams",
+  "donations",
+  "posts",
+  "profiles",
+]);
+
 function isManagedProfileRole(value: unknown): value is ManagedProfileRole {
   return (
     value === "member" ||
@@ -64,6 +77,121 @@ function isManagedProfileRole(value: unknown): value is ManagedProfileRole {
 
 function getProfileRoleLevel(role: ManagedProfileRole): number {
   return PROFILE_ROLE_ORDER.indexOf(role);
+}
+
+function assertImamHasMosque(session: AdminSession): string {
+  if (!session.mosqueId) {
+    throw new AdminAuthorizationError(
+      "Your imam account is not linked to a mosque yet.",
+      403
+    );
+  }
+
+  return session.mosqueId;
+}
+
+function getImamScopeColumn(
+  definition: AdminEntityDefinition
+): string | null {
+  if (!IMAM_MOSQUE_SCOPED_ENTITY_KEYS.has(definition.key)) {
+    return null;
+  }
+
+  return definition.key === "mosques" ? definition.primaryKey : "mosque_id";
+}
+
+function applySessionScopeToQuery(
+  query: {
+    eq: (column: string, value: unknown) => unknown;
+  },
+  definition: AdminEntityDefinition,
+  session: AdminSession
+): any {
+  if (session.role !== "imam") {
+    return query;
+  }
+
+  const scopeColumn = getImamScopeColumn(definition);
+  if (!scopeColumn) {
+    return query;
+  }
+
+  return query.eq(scopeColumn, assertImamHasMosque(session));
+}
+
+function resolveRecordMosqueId(
+  definition: AdminEntityDefinition,
+  record: Record<string, unknown> | null | undefined
+): string | null {
+  if (!record) {
+    return null;
+  }
+
+  if (definition.key === "mosques") {
+    return typeof record[definition.primaryKey] === "string"
+      ? String(record[definition.primaryKey])
+      : null;
+  }
+
+  const mosqueId = record.mosque_id;
+  return typeof mosqueId === "string" ? mosqueId : null;
+}
+
+function assertRecordWithinSessionScope(input: {
+  definition: AdminEntityDefinition;
+  session: AdminSession;
+  record: Record<string, unknown>;
+}): string | null {
+  if (input.session.role !== "imam") {
+    return resolveRecordMosqueId(input.definition, input.record);
+  }
+
+  const scopeColumn = getImamScopeColumn(input.definition);
+  if (!scopeColumn) {
+    throw new AdminAuthorizationError("Forbidden", 403);
+  }
+
+  const mosqueId = assertImamHasMosque(input.session);
+  const recordMosqueId = resolveRecordMosqueId(input.definition, input.record);
+
+  if (recordMosqueId !== mosqueId) {
+    throw new AdminAuthorizationError("Forbidden", 403);
+  }
+
+  return recordMosqueId;
+}
+
+function applySessionScopeToMutationPayload(
+  definition: AdminEntityDefinition,
+  payload: Record<string, unknown>,
+  session: AdminSession
+): Record<string, unknown> {
+  if (session.role !== "imam") {
+    return payload;
+  }
+
+  const mosqueId = assertImamHasMosque(session);
+
+  switch (definition.key) {
+    case "mosques": {
+      const nextPayload = { ...payload };
+      delete nextPayload.is_verified;
+      return nextPayload;
+    }
+    case "prayer_times":
+    case "events":
+    case "announcements":
+    case "imams":
+    case "donations":
+    case "posts":
+    case "profiles":
+      return {
+        ...payload,
+        mosque_id: mosqueId,
+      };
+    default:
+      return payload;
+  }
 }
 
 function assertCanManageProfileMutation(input: {
@@ -141,6 +269,28 @@ async function loadExistingProfileRecord(
 
   if (!data) {
     throw new AdminServiceError("Profile not found", 404);
+  }
+
+  return data as Record<string, unknown>;
+}
+
+async function loadExistingEntityRecord(
+  supabase: SupabaseServerClient,
+  definition: AdminEntityDefinition,
+  id: string
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from(definition.table)
+    .select("*")
+    .eq(definition.primaryKey, id)
+    .maybeSingle();
+
+  if (error) {
+    throw new AdminServiceError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new AdminServiceError("Record not found", 404);
   }
 
   return data as Record<string, unknown>;
@@ -308,12 +458,23 @@ function applyEntityDefaults(
 }
 
 async function loadMosqueLookup(
-  supabase: SupabaseServerClient
+  supabase: SupabaseServerClient,
+  session?: AdminSession
 ): Promise<AdminLookupOption[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("mosques")
     .select("id, name")
     .order("name", { ascending: true });
+
+  if (session?.role === "imam") {
+    query = applySessionScopeToQuery(
+      query as any,
+      resolveDefinition("mosques"),
+      session
+    ) as typeof query;
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return [];
@@ -327,7 +488,8 @@ async function loadMosqueLookup(
 
 async function loadLookups(
   supabase: SupabaseServerClient,
-  definitions: AdminEntityDefinition[]
+  definitions: AdminEntityDefinition[],
+  session?: AdminSession
 ): Promise<Record<string, AdminLookupOption[]>> {
   const lookupKeys = new Set<string>();
   for (const definition of definitions) {
@@ -336,26 +498,35 @@ async function loadLookups(
     }
   }
 
-  const lookups: Record<string, AdminLookupOption[]> = {};
+  const lookupEntries = await Promise.all(
+    Array.from(lookupKeys).map(async (lookupKey) => {
+      if (lookupKey === "mosques") {
+        return [lookupKey, await loadMosqueLookup(supabase, session)] as const;
+      }
 
-  if (lookupKeys.has("mosques")) {
-    lookups.mosques = await loadMosqueLookup(supabase);
-  }
+      return [lookupKey, []] as const;
+    })
+  );
 
-  return lookups;
+  return Object.fromEntries(lookupEntries);
 }
 
 async function countEntityRecords(
   supabase: SupabaseServerClient,
-  definition: AdminEntityDefinition
+  definition: AdminEntityDefinition,
+  session: AdminSession
 ): Promise<number | null> {
   if (definition.singleton) {
     return 1;
   }
 
-  const { count, error } = await supabase
-    .from(definition.table)
-    .select("*", { count: "exact", head: true });
+  const query = applySessionScopeToQuery(
+    supabase.from(definition.table).select("*", { count: "exact", head: true }) as any,
+    definition,
+    session
+  ) as any;
+
+  const { count, error } = await query;
 
   if (error) {
     return null;
@@ -427,33 +598,32 @@ export async function listAdminEntities(
 ): Promise<AdminEntitiesResponse> {
   const supabase = await createClient();
   const settingsState = await loadSettingsState(supabase);
-  const definitions = listAdminEntityDefinitions();
-  const visibleDefinitions = definitions.filter((definition) =>
-    buildEntityCapability(
+  const visibleEntities = listAdminEntityDefinitions()
+    .map((definition) => ({
       definition,
-      session.role,
-      settingsState.record.shura_permissions
-    ).read
+      capability: buildEntityCapability(
+        definition,
+        session.role,
+        settingsState.record.shura_permissions
+      ),
+    }))
+    .filter((entry) => entry.capability.read);
+
+  const counts = await Promise.all(
+    visibleEntities.map((entry) =>
+      countEntityRecords(supabase, entry.definition, session)
+    )
   );
 
-  const lookups = await loadLookups(supabase, visibleDefinitions);
-  const entities: AdminEntitySummary[] = [];
-
-  for (const definition of visibleDefinitions) {
-    const capability = buildEntityCapability(
-      definition,
-      session.role,
-      settingsState.record.shura_permissions
-    );
-    const count = await countEntityRecords(supabase, definition);
-    entities.push(toSummary(definition, capability, count));
-  }
+  const entities = visibleEntities.map((entry, index) =>
+    toSummary(entry.definition, entry.capability, counts[index] ?? null)
+  );
 
   return {
     entities,
-    lookups,
+    lookups: {},
     moduleSettings: settingsState.record.module_settings,
-    realtimeFeed: ADMIN_REALTIME_FEED,
+    realtimeFeed: resolveManagementRealtimeFeed(session),
     settingsWritable: settingsState.writable,
   };
 }
@@ -481,7 +651,7 @@ export async function listAdminEntityRecords(input: {
     input.session.role,
     settingsState.record.shura_permissions
   );
-  const lookups = await loadLookups(supabase, [definition]);
+  const lookups = await loadLookups(supabase, [definition], input.session);
 
   if (definition.key === "settings") {
     return {
@@ -503,6 +673,8 @@ export async function listAdminEntityRecords(input: {
     .order(definition.key === "donations" ? "created_at" : "updated_at", {
       ascending: false,
     });
+
+  query = applySessionScopeToQuery(query as any, definition, input.session) as typeof query;
 
   if (search && definition.searchColumns.length > 0) {
     query = query.or(
@@ -557,7 +729,7 @@ export async function getAdminEntityRecord(input: {
     input.session.role,
     settingsState.record.shura_permissions
   );
-  const lookups = await loadLookups(supabase, [definition]);
+  const lookups = await loadLookups(supabase, [definition], input.session);
 
   if (definition.key === "settings") {
     return {
@@ -567,19 +739,13 @@ export async function getAdminEntityRecord(input: {
     };
   }
 
-  const { data, error } = await supabase
-    .from(definition.table)
-    .select("*")
-    .eq(definition.primaryKey, input.id)
-    .maybeSingle();
+  const data = await loadExistingEntityRecord(supabase, definition, input.id);
 
-  if (error) {
-    throw new AdminServiceError(error.message, 500);
-  }
-
-  if (!data) {
-    throw new AdminServiceError("Record not found", 404);
-  }
+  assertRecordWithinSessionScope({
+    definition,
+    session: input.session,
+    record: data,
+  });
 
   return {
     entity: toSummary(definition, capability, null),
@@ -593,6 +759,7 @@ async function publishAdminMutation(params: {
   session: AdminSession;
   definition: AdminEntityDefinition;
   entityId: string;
+  mosqueId?: string | null;
   action: "created" | "updated" | "deleted";
 }): Promise<void> {
   const idempotencyKey = await resolveIdempotencyKey(
@@ -607,9 +774,11 @@ async function publishAdminMutation(params: {
     actorUserId: params.session.userId,
     idempotencyKey,
     feedStreamId: ADMIN_REALTIME_FEED,
+    feedStreamIds: params.mosqueId ? [getImamRealtimeFeed(params.mosqueId)] : [],
     payload: {
       entityKey: params.definition.key,
       action: params.action,
+      mosqueId: params.mosqueId ?? null,
     },
   });
 }
@@ -635,7 +804,7 @@ export async function createAdminEntityRecord(input: {
     input.session.role,
     settingsState.record.shura_permissions
   );
-  const lookups = await loadLookups(supabase, [definition]);
+  const lookups = await loadLookups(supabase, [definition], input.session);
 
   if (definition.key === "settings") {
     if (!settingsState.writable) {
@@ -647,7 +816,11 @@ export async function createAdminEntityRecord(input: {
 
     const mutationPayload = applyEntityDefaults(
       definition,
-      buildMutationPayload(definition, input.payload),
+      applySessionScopeToMutationPayload(
+        definition,
+        buildMutationPayload(definition, input.payload),
+        input.session
+      ),
       input.session,
       "create"
     );
@@ -675,6 +848,7 @@ export async function createAdminEntityRecord(input: {
       definition,
       entityId: ADMIN_SETTINGS_SINGLETON_ID,
       action: "updated",
+      mosqueId: null,
     });
 
     return {
@@ -686,7 +860,11 @@ export async function createAdminEntityRecord(input: {
 
   const mutationPayload = applyEntityDefaults(
     definition,
-    buildMutationPayload(definition, input.payload),
+    applySessionScopeToMutationPayload(
+      definition,
+      buildMutationPayload(definition, input.payload),
+      input.session
+    ),
     input.session,
     "create"
   );
@@ -704,6 +882,10 @@ export async function createAdminEntityRecord(input: {
   const entityId = String(
     (data as Record<string, unknown>)[definition.primaryKey] ?? ""
   );
+  const mosqueId = resolveRecordMosqueId(
+    definition,
+    data as Record<string, unknown>
+  );
 
   await publishAdminMutation({
     request: input.request,
@@ -711,6 +893,7 @@ export async function createAdminEntityRecord(input: {
     definition,
     entityId,
     action: "created",
+    mosqueId,
   });
 
   return {
@@ -742,7 +925,7 @@ export async function updateAdminEntityRecord(input: {
     input.session.role,
     settingsState.record.shura_permissions
   );
-  const lookups = await loadLookups(supabase, [definition]);
+  const lookups = await loadLookups(supabase, [definition], input.session);
 
   if (definition.key === "settings") {
     if (!settingsState.writable) {
@@ -754,7 +937,11 @@ export async function updateAdminEntityRecord(input: {
 
     const mutationPayload = applyEntityDefaults(
       definition,
-      buildMutationPayload(definition, input.payload),
+      applySessionScopeToMutationPayload(
+        definition,
+        buildMutationPayload(definition, input.payload),
+        input.session
+      ),
       input.session,
       "update"
     );
@@ -783,6 +970,7 @@ export async function updateAdminEntityRecord(input: {
       definition,
       entityId: ADMIN_SETTINGS_SINGLETON_ID,
       action: "updated",
+      mosqueId: null,
     });
 
     return {
@@ -794,10 +982,21 @@ export async function updateAdminEntityRecord(input: {
 
   const mutationPayload = applyEntityDefaults(
     definition,
-    buildMutationPayload(definition, input.payload),
+    applySessionScopeToMutationPayload(
+      definition,
+      buildMutationPayload(definition, input.payload),
+      input.session
+    ),
     input.session,
     "update"
   );
+
+  const existingRecord = await loadExistingEntityRecord(supabase, definition, input.id);
+  assertRecordWithinSessionScope({
+    definition,
+    session: input.session,
+    record: existingRecord,
+  });
 
   if (definition.key === "profiles") {
     const existingProfile = await loadExistingProfileRecord(supabase, input.id);
@@ -823,12 +1022,18 @@ export async function updateAdminEntityRecord(input: {
     throw new AdminServiceError("Record not found", 404);
   }
 
+  const mosqueId = resolveRecordMosqueId(
+    definition,
+    data as Record<string, unknown>
+  );
+
   await publishAdminMutation({
     request: input.request,
     session: input.session,
     definition,
     entityId: input.id,
     action: "updated",
+    mosqueId,
   });
 
   return {
@@ -871,11 +1076,18 @@ export async function deleteAdminEntityRecord(input: {
     });
   }
 
+  const existingRecord = await loadExistingEntityRecord(supabase, definition, input.id);
+  const mosqueId = assertRecordWithinSessionScope({
+    definition,
+    session: input.session,
+    record: existingRecord,
+  });
+
   const { data, error } = await supabase
     .from(definition.table)
     .delete()
     .eq(definition.primaryKey, input.id)
-    .select(definition.primaryKey)
+    .select("*")
     .maybeSingle();
 
   if (error) {
@@ -892,6 +1104,7 @@ export async function deleteAdminEntityRecord(input: {
     definition,
     entityId: input.id,
     action: "deleted",
+    mosqueId,
   });
 }
 

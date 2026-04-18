@@ -2,6 +2,7 @@ export type AdminUserRole = "super_admin" | "admin" | "shura" | "imam" | "member
 
 export const ADMIN_ENTITY_KEYS = [
   "mosques",
+  "prayer_times",
   "events",
   "announcements",
   "imams",

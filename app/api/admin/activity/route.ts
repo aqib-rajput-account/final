@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     const entityType = url.searchParams.get("entityType") ?? undefined;
 
     const items = await listAdminActivity({
+      session,
       limit,
       entityType,
     });

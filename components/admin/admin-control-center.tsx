@@ -272,6 +272,7 @@ export function AdminControlCenter({
       ),
     [selectedEntity]
   );
+  const canSearchSelectedEntity = Boolean(selectedEntity?.searchPlaceholder);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const enabledActionCount = selectedEntity
     ? Object.values(selectedEntity.capability).filter(Boolean).length
@@ -885,18 +886,18 @@ export function AdminControlCenter({
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!selectedEntity.singleton && (
+              {!selectedEntity.singleton &&
+                (canSearchSelectedEntity || filterFields.length > 0) && (
                 <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                    <Input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder={
-                        selectedEntity.searchPlaceholder ??
-                        `Search ${selectedEntity.label.toLowerCase()}`
-                      }
-                      className="lg:max-w-md"
-                    />
+                    {canSearchSelectedEntity ? (
+                      <Input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder={selectedEntity.searchPlaceholder}
+                        className="lg:max-w-md"
+                      />
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       {filterFields.map((field) => {
                         const options = getFieldOptions(field, activeLookups);

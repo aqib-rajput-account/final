@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS public.admin_settings (
   }'::jsonb,
   shura_permissions JSONB NOT NULL DEFAULT '{
     "mosques": { "read": true, "create": false, "update": false, "delete": false },
+    "prayer_times": { "read": true, "create": false, "update": false, "delete": false },
     "events": { "read": true, "create": false, "update": false, "delete": false },
     "announcements": { "read": true, "create": false, "update": false, "delete": false },
     "imams": { "read": true, "create": false, "update": false, "delete": false },

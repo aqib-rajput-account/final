@@ -40,4 +40,5 @@ export interface PublishRealtimeEventInput<TPayload extends Record<string, unkno
   version?: number
   targetUserIds?: string[]
   feedStreamId?: string
+  feedStreamIds?: string[]
 }

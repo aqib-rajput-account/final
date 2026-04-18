@@ -5,21 +5,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
+  BellRing,
+  BookOpen,
   Building2,
   Calendar,
-  Clock3,
   ChevronLeft,
+  Clock3,
   Database,
   DollarSign,
   LayoutDashboard,
   Loader2,
   LogOut,
-  Megaphone,
   Menu,
+  MessageSquare,
   Moon,
-  Settings,
   Sun,
-  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -33,77 +33,69 @@ import { useAuth, getRoleDisplayName } from "@/lib/auth";
 import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
 import { cn } from "@/lib/utils";
 
-type AdminSidebarItem = {
+type ImamSidebarItem = {
   name: string;
   href: string;
   icon: LucideIcon;
   entityKey?: AdminEntityKey;
-  entityKeys?: AdminEntityKey[];
-  moduleKey?: string;
-  superAdminOnly?: boolean;
   alwaysVisible?: boolean;
 };
 
-const sidebarItems: AdminSidebarItem[] = [
-  { name: "Dashboard", href: "/admin", icon: LayoutDashboard, alwaysVisible: true },
+const sidebarItems: ImamSidebarItem[] = [
+  { name: "Overview", href: "/imam", icon: LayoutDashboard, alwaysVisible: true },
   {
     name: "Control Center",
-    href: "/admin/control-center",
+    href: "/imam/control-center",
     icon: Database,
-    moduleKey: "adminControlCenter",
     alwaysVisible: true,
   },
   {
-    name: "Mosques",
-    href: "/admin/mosques",
+    name: "Mosque Settings",
+    href: "/imam/mosque",
     icon: Building2,
     entityKey: "mosques",
-    moduleKey: "mosques",
+    alwaysVisible: true,
   },
   {
     name: "Prayer Times",
-    href: "/admin/prayer-times",
+    href: "/imam/prayer-times",
     icon: Clock3,
     entityKey: "prayer_times",
+    alwaysVisible: true,
   },
   {
     name: "Events",
-    href: "/admin/events",
+    href: "/imam/events",
     icon: Calendar,
     entityKey: "events",
-    moduleKey: "events",
-  },
-  {
-    name: "Finance",
-    href: "/admin/finance",
-    icon: DollarSign,
-    entityKey: "donations",
-    moduleKey: "donations",
+    alwaysVisible: true,
   },
   {
     name: "Announcements",
-    href: "/admin/announcements",
-    icon: Megaphone,
+    href: "/imam/announcements",
+    icon: BellRing,
     entityKey: "announcements",
-    moduleKey: "announcements",
+    alwaysVisible: true,
+  },
+  {
+    name: "Imam Team",
+    href: "/imam/imams",
+    icon: Users,
+    entityKey: "imams",
+    alwaysVisible: true,
   },
   {
     name: "Community",
-    href: "/admin/community",
-    icon: Users,
-    entityKeys: ["profiles", "posts"],
-    moduleKey: "community",
+    href: "/imam/community",
+    icon: MessageSquare,
+    entityKey: "posts",
+    alwaysVisible: true,
   },
   {
-    name: "User Management",
-    href: "/admin/users",
-    icon: UserCog,
-    entityKey: "profiles",
-  },
-  {
-    name: "Settings",
-    href: "/admin/settings",
-    icon: Settings,
+    name: "Finance",
+    href: "/imam/finance",
+    icon: DollarSign,
+    entityKey: "donations",
     alwaysVisible: true,
   },
 ];
@@ -115,38 +107,19 @@ function hasVisibleEntity(
   return Boolean(metadata?.entities.some((entity) => entity.key === entityKey));
 }
 
-function getSidebarBadgeCount(
+function getBadgeCount(
   metadata: AdminEntitiesResponse | null,
-  item: AdminSidebarItem
+  entityKey?: AdminEntityKey
 ): number | null {
-  if (!metadata) {
+  if (!metadata || !entityKey) {
     return null;
   }
 
-  if (item.entityKey) {
-    const entity = metadata.entities.find((entry) => entry.key === item.entityKey);
-    return typeof entity?.count === "number" ? entity.count : null;
-  }
-
-  if (!item.entityKeys?.length) {
-    return null;
-  }
-
-  const counts = item.entityKeys
-    .map((entityKey) => metadata.entities.find((entry) => entry.key === entityKey))
-    .map((entity) => entity?.count)
-    .filter((count): count is number => typeof count === "number");
-
-  return counts.length > 0 ? counts.reduce((sum, count) => sum + count, 0) : null;
+  const entity = metadata.entities.find((entry) => entry.key === entityKey);
+  return typeof entity?.count === "number" ? entity.count : null;
 }
 
-function SidebarContent({
-  pathname,
-  isSuperAdmin,
-}: {
-  pathname: string;
-  isSuperAdmin: boolean;
-}) {
+function SidebarContent({ pathname }: { pathname: string }) {
   const { theme, setTheme } = useTheme();
   const { profile, signOut } = useAuth();
   const { data: metadata, loading: metadataLoading } = useAdminPanelMetadata();
@@ -154,47 +127,27 @@ function SidebarContent({
   const filteredItems = useMemo(
     () =>
       sidebarItems.filter((item) => {
-        if (item.superAdminOnly && !isSuperAdmin) {
-          return false;
+        if (!metadata || !item.entityKey) {
+          return item.alwaysVisible ?? true;
         }
 
-        if (!metadata) {
-          return true;
-        }
-
-        if (item.moduleKey && metadata.moduleSettings[item.moduleKey] === false) {
-          return false;
-        }
-
-        if (item.entityKey && !hasVisibleEntity(metadata, item.entityKey)) {
-          return false;
-        }
-
-        if (
-          item.entityKeys &&
-          !item.entityKeys.some((entityKey) => hasVisibleEntity(metadata, entityKey))
-        ) {
-          return false;
-        }
-
-        return item.alwaysVisible ?? true;
+        return hasVisibleEntity(metadata, item.entityKey);
       }),
-    [isSuperAdmin, metadata]
+    [metadata]
   );
-
-  const enabledModuleCount = Object.values(metadata?.moduleSettings ?? {}).filter(Boolean)
-    .length;
 
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-sidebar-border px-6 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Building2 className="h-6 w-6 text-sidebar-primary" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+              <BookOpen className="h-5 w-5" />
+            </div>
             <div className="flex flex-col">
-              <span className="font-semibold text-lg">Admin Panel</span>
+              <span className="font-semibold text-lg">Imam Panel</span>
               <span className="text-xs text-sidebar-foreground/60">
-                Live control plane
+                Mosque control workspace
               </span>
             </div>
           </div>
@@ -203,31 +156,31 @@ function SidebarContent({
           ) : (
             <Badge
               variant="outline"
-              className="border-sidebar-primary/30 bg-sidebar-primary/10 text-sidebar-primary"
+              className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
             >
-              Live
+              Scoped
             </Badge>
           )}
         </div>
-        {metadata && (
+        {metadata ? (
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <Badge
-              variant="outline"
-              className="border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground/80"
-            >
-              {enabledModuleCount} modules
-            </Badge>
             <Badge
               variant="outline"
               className="border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground/80"
             >
               {metadata.entities.length} surfaces
             </Badge>
+            <Badge
+              variant="outline"
+              className="border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground/80"
+            >
+              Live mosque scope
+            </Badge>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {profile && (
+      {profile ? (
         <div className="border-b border-sidebar-border px-4 py-3">
           <p className="truncate text-sm font-medium text-sidebar-foreground">
             {profile.full_name || profile.email}
@@ -235,26 +188,21 @@ function SidebarContent({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
-              className="border-sidebar-primary/30 bg-sidebar-primary/20 text-xs text-sidebar-primary"
+              className="border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-700 dark:text-emerald-300"
             >
               {getRoleDisplayName(profile.role)}
             </Badge>
-            {metadata?.realtimeFeed ? (
-              <span className="text-xs text-sidebar-foreground/60">
-                Feed: {metadata.realtimeFeed}
-              </span>
-            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="space-y-1">
           {filteredItems.map((item) => {
             const isActive =
               pathname === item.href ||
-              (item.href !== "/admin" && pathname.startsWith(item.href));
-            const badgeCount = getSidebarBadgeCount(metadata, item);
+              (item.href !== "/imam" && pathname.startsWith(item.href));
+            const badgeCount = getBadgeCount(metadata, item.entityKey);
 
             return (
               <Link
@@ -271,14 +219,14 @@ function SidebarContent({
                   <item.icon className="h-5 w-5" />
                   {item.name}
                 </span>
-                {badgeCount != null && (
+                {badgeCount != null ? (
                   <Badge
                     variant="secondary"
-                    className="h-5 min-w-5 bg-sidebar-primary/15 px-1.5 text-xs text-sidebar-primary"
+                    className="h-5 min-w-5 bg-emerald-500/15 px-1.5 text-xs text-emerald-700 dark:text-emerald-300"
                   >
                     {badgeCount}
                   </Badge>
-                )}
+                ) : null}
               </Link>
             );
           })}
@@ -323,20 +271,19 @@ function SidebarContent({
   );
 }
 
-export default function AdminLayout({
+export default function ImamLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { isSuperAdmin } = useAuth();
 
   return (
-    <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+    <ProtectedRoute requiredRoles={["imam"]}>
       <div className="flex min-h-screen bg-background">
         <aside className="fixed inset-y-0 hidden w-64 flex-col bg-sidebar text-sidebar-foreground lg:flex">
-          <SidebarContent pathname={pathname} isSuperAdmin={isSuperAdmin} />
+          <SidebarContent pathname={pathname} />
         </aside>
 
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -344,7 +291,7 @@ export default function AdminLayout({
             side="left"
             className="w-64 bg-sidebar p-0 text-sidebar-foreground"
           >
-            <SidebarContent pathname={pathname} isSuperAdmin={isSuperAdmin} />
+            <SidebarContent pathname={pathname} />
           </SheetContent>
         </Sheet>
 
@@ -359,8 +306,8 @@ export default function AdminLayout({
               </SheetTrigger>
             </Sheet>
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              <span className="font-semibold">MosqueConnect Admin</span>
+              <BookOpen className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <span className="font-semibold">MosqueConnect Imam</span>
             </div>
           </header>
 

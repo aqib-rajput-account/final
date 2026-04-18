@@ -110,12 +110,14 @@ export function AdminSettingsConsole({
     async function loadSettings() {
       setLoadingSettings(true);
       try {
-        const settingsResponse = await fetch("/api/admin/entities/settings/app", {
-          cache: "no-store",
-        });
-        const activityResponse = await fetch("/api/admin/activity?limit=8", {
-          cache: "no-store",
-        }).catch(() => null);
+        const [settingsResponse, activityResponse] = await Promise.all([
+          fetch("/api/admin/entities/settings/app", {
+            cache: "no-store",
+          }),
+          fetch("/api/admin/activity?limit=8", {
+            cache: "no-store",
+          }).catch(() => null),
+        ]);
 
         const settingsPayload = (await settingsResponse
           .json()

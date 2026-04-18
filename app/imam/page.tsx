@@ -4,13 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
-  ArrowRight,
-  Crown,
+  BellRing,
+  BookOpen,
+  Building2,
+  Calendar,
+  Clock3,
   Database,
+  DollarSign,
   Loader2,
-  Settings2,
-  Shield,
-  UserCog,
+  MessageSquare,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +24,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { AdminActivityEntry, AdminActivityResponse } from "@/lib/admin/types";
+import type {
+  AdminActivityEntry,
+  AdminActivityResponse,
+  AdminListResponse,
+} from "@/lib/admin/types";
 import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
 
 function formatEntityLabel(entityKey: string): string {
@@ -39,27 +45,34 @@ function formatActivityLabel(item: AdminActivityEntry): string {
   )}`;
 }
 
-export default function SuperAdminDashboardPage() {
+export default function ImamDashboardPage() {
+  const { data, loading, refresh } = useAdminPanelMetadata();
   const [activity, setActivity] = useState<AdminActivityEntry[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [activityUnavailable, setActivityUnavailable] = useState(false);
-  const { data, loading, refresh } = useAdminPanelMetadata();
+  const [mosqueName, setMosqueName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) {
       setActivity([]);
+      setMosqueName(null);
       setLoadingActivity(loading);
       return;
     }
 
     let cancelled = false;
 
-    async function loadActivity() {
+    async function loadScopedDashboard() {
       setLoadingActivity(true);
       try {
-        const activityResponse = await fetch("/api/admin/activity?limit=6", {
-          cache: "no-store",
-        }).catch(() => null);
+        const [mosqueResponse, activityResponse] = await Promise.all([
+          fetch("/api/admin/entities/mosques?limit=1", { cache: "no-store" }),
+          fetch("/api/admin/activity?limit=6", { cache: "no-store" }).catch(() => null),
+        ]);
+
+        const mosquePayload = (await mosqueResponse.json().catch(() => ({}))) as
+          | AdminListResponse
+          | { error?: string };
         const activityPayload =
           activityResponse != null
             ? ((await activityResponse.json().catch(() => ({}))) as
@@ -68,6 +81,19 @@ export default function SuperAdminDashboardPage() {
             : null;
 
         if (!cancelled) {
+          if (
+            mosqueResponse.ok &&
+            "items" in mosquePayload &&
+            mosquePayload.items.length > 0
+          ) {
+            const firstMosque = mosquePayload.items[0] as Record<string, unknown>;
+            setMosqueName(
+              typeof firstMosque.name === "string" ? firstMosque.name : null
+            );
+          } else {
+            setMosqueName(null);
+          }
+
           if (
             activityResponse?.ok &&
             activityPayload != null &&
@@ -83,6 +109,7 @@ export default function SuperAdminDashboardPage() {
       } catch {
         if (!cancelled) {
           setActivity([]);
+          setMosqueName(null);
           setActivityUnavailable(true);
         }
       } finally {
@@ -92,7 +119,7 @@ export default function SuperAdminDashboardPage() {
       }
     }
 
-    void loadActivity();
+    void loadScopedDashboard();
 
     return () => {
       cancelled = true;
@@ -103,9 +130,60 @@ export default function SuperAdminDashboardPage() {
     (sum, entity) => sum + (typeof entity.count === "number" ? entity.count : 0),
     0
   );
-  const enabledModules = Object.values(data?.moduleSettings ?? {}).filter(Boolean).length;
-  const profileCount =
-    data?.entities.find((entity) => entity.key === "profiles")?.count ?? 0;
+  const totalEntities = data?.entities.length ?? 0;
+  const prayerTimeCount =
+    data?.entities.find((entity) => entity.key === "prayer_times")?.count ?? 0;
+
+  const quickLinks = [
+    {
+      href: "/imam/mosque",
+      label: "Mosque Settings",
+      description: "Update your mosque profile and operational details.",
+      icon: Building2,
+    },
+    {
+      href: "/imam/prayer-times",
+      label: "Prayer Times",
+      description: "Maintain adhan, iqama, and Jummah schedules.",
+      icon: Clock3,
+    },
+    {
+      href: "/imam/events",
+      label: "Events",
+      description: "Publish classes, khutbahs, and community events.",
+      icon: Calendar,
+    },
+    {
+      href: "/imam/announcements",
+      label: "Announcements",
+      description: "Share urgent notices and weekly community updates.",
+      icon: BellRing,
+    },
+    {
+      href: "/imam/imams",
+      label: "Imam Team",
+      description: "Manage leadership records and imam-facing profiles.",
+      icon: Users,
+    },
+    {
+      href: "/imam/community",
+      label: "Community",
+      description: "Moderate mosque posts and community messaging.",
+      icon: MessageSquare,
+    },
+    {
+      href: "/imam/finance",
+      label: "Finance",
+      description: "Review donations tied to your mosque.",
+      icon: DollarSign,
+    },
+    {
+      href: "/imam/control-center",
+      label: "Control Center",
+      description: "Open the full mosque-scoped CRUD surface.",
+      icon: Database,
+    },
+  ];
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -113,37 +191,31 @@ export default function SuperAdminDashboardPage() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="gap-1">
-              <Crown className="h-3.5 w-3.5" />
-              Super Admin
+              <BookOpen className="h-3.5 w-3.5" />
+              Imam Panel
             </Badge>
             <Badge variant="secondary" className="gap-1">
-              <Shield className="h-3.5 w-3.5" />
-              Platform Governance
+              <Building2 className="h-3.5 w-3.5" />
+              Mosque Scoped
             </Badge>
           </div>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">
-            Super Admin Panel
+            {mosqueName ? `${mosqueName}` : "Imam Dashboard"}
           </h1>
           <p className="text-muted-foreground">
-            Govern the platform layer separately from day-to-day admin operations,
-            with direct access to global control, user governance, and cross-module
-            visibility.
+            Manage your mosque&apos;s live settings, prayer schedule, announcements,
+            events, leadership records, community posts, and donations from one
+            dedicated workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={refresh}>
             Refresh
           </Button>
-          <Link href="/super-admin/control-center">
+          <Link href="/imam/control-center">
             <Button>
               <Database className="mr-2 h-4 w-4" />
-              Open Super Control Center
-            </Button>
-          </Link>
-          <Link href="/admin">
-            <Button variant="outline">
-              <ArrowRight className="mr-2 h-4 w-4" />
-              Open Admin Panel
+              Open Control Center
             </Button>
           </Link>
         </div>
@@ -152,25 +224,13 @@ export default function SuperAdminDashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Governed Surfaces</CardTitle>
+            <CardTitle className="text-sm font-medium">Managed Surfaces</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : data?.entities.length ?? 0}</div>
+            <div className="text-2xl font-bold">{loading ? "..." : totalEntities}</div>
             <p className="text-xs text-muted-foreground">
-              Admin-managed entities visible from the registry
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Platform Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : profileCount}</div>
-            <p className="text-xs text-muted-foreground">
-              Profiles currently available to governance workflows
+              Mosque-scoped entities available to this imam
             </p>
           </CardContent>
         </Card>
@@ -182,19 +242,35 @@ export default function SuperAdminDashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{loading ? "..." : totalRecords}</div>
             <p className="text-xs text-muted-foreground">
-              Total rows across visible admin entities
+              Total rows currently managed inside your mosque scope
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Enabled Modules</CardTitle>
-            <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Prayer Schedules</CardTitle>
+            <Clock3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? "..." : enabledModules}</div>
+            <div className="text-2xl font-bold">
+              {loading ? "..." : prayerTimeCount}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Runtime modules currently enabled from global settings
+              Daily prayer-time rows configured for your mosque
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
+            <BellRing className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loadingActivity ? "..." : activity.length}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Latest mosque-scoped updates from your live panel
             </p>
           </CardContent>
         </Card>
@@ -203,86 +279,44 @@ export default function SuperAdminDashboardPage() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_380px]">
         <Card>
           <CardHeader>
-            <CardTitle>Governance Workflows</CardTitle>
+            <CardTitle>Imam Workflows</CardTitle>
             <CardDescription>
-              Use the Super Admin panel for platform-level actions, and keep the
-              operational Admin panel focused on daily management.
+              Every link below opens a mosque-scoped surface, so you only manage
+              records connected to your own mosque.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle className="text-base">Global Control Center</CardTitle>
-                <CardDescription>
-                  Access every registered entity from one surface with realtime sync.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/super-admin/control-center">
-                  <Button variant="outline" size="sm">
-                    Open Control Center
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle className="text-base">User Governance</CardTitle>
-                <CardDescription>
-                  Manage role hierarchy, account state, and profile governance.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/super-admin/users">
-                  <Button variant="outline" size="sm">
-                    Open User Governance
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle className="text-base">Global Settings</CardTitle>
-                <CardDescription>
-                  Control runtime modules, permissions, and defaults for the whole app.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/super-admin/settings">
-                  <Button variant="outline" size="sm">
-                    Open Settings
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle className="text-base">Operational Admin Panel</CardTitle>
-                <CardDescription>
-                  Jump into the day-to-day admin surface without losing separation.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link href="/admin">
-                  <Button variant="outline" size="sm">
-                    Open Admin Panel
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
+            {quickLinks.map((item) => (
+              <Card key={item.href} className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <item.icon className="h-4 w-4 text-primary" />
+                    {item.label}
+                  </CardTitle>
+                  <CardDescription>{item.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Link href={item.href}>
+                    <Button variant="outline" size="sm">
+                      Open {item.label}
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Recent Platform Activity</CardTitle>
+              <CardTitle>Recent Mosque Activity</CardTitle>
               {activityUnavailable ? (
                 <Badge variant="outline">Activity Feed Unavailable</Badge>
               ) : null}
             </div>
             <CardDescription>
-              Latest admin-side mutations captured through the shared realtime bus.
+              Latest updates broadcast from your mosque-scoped management feed.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -293,7 +327,7 @@ export default function SuperAdminDashboardPage() {
               </div>
             ) : activity.length === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                No recent platform activity found.
+                No recent mosque activity found.
               </div>
             ) : (
               activity.map((item) => (

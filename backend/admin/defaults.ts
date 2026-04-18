@@ -1,11 +1,13 @@
 import type {
   AdminSettingsRecord,
+  AdminUserRole,
   ShuraEntityPermission,
   ShuraPermissionMap,
 } from "@/lib/admin/types";
 
 export const ADMIN_SETTINGS_SINGLETON_ID = "app";
 export const ADMIN_REALTIME_FEED = "admin-control-center";
+export const IMAM_REALTIME_FEED_PREFIX = "imam-control-center";
 
 export const DEFAULT_NOTIFICATION_SETTINGS = {
   emailNotifications: true,
@@ -43,6 +45,7 @@ const readonlyPermission = (): ShuraEntityPermission => ({
 
 export const DEFAULT_SHURA_PERMISSIONS: ShuraPermissionMap = {
   mosques: readonlyPermission(),
+  prayer_times: readonlyPermission(),
   events: readonlyPermission(),
   announcements: readonlyPermission(),
   imams: readonlyPermission(),
@@ -66,6 +69,21 @@ export const DEFAULT_SHURA_PERMISSIONS: ShuraPermissionMap = {
     delete: false,
   },
 };
+
+export function getImamRealtimeFeed(mosqueId: string): string {
+  return `${IMAM_REALTIME_FEED_PREFIX}:${mosqueId}`;
+}
+
+export function resolveManagementRealtimeFeed(input: {
+  role: AdminUserRole;
+  mosqueId: string | null;
+}): string {
+  if (input.role === "imam" && input.mosqueId) {
+    return getImamRealtimeFeed(input.mosqueId);
+  }
+
+  return ADMIN_REALTIME_FEED;
+}
 
 function normalizeBooleanRecord(
   value: unknown,

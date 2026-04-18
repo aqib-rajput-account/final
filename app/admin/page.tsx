@@ -1,10 +1,10 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
   ArrowUpRight,
+  Clock3,
   Database,
   Loader2,
   Shield,
@@ -20,13 +20,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { AdminEntitiesResponse, AdminEntityKey } from "@/lib/admin/types";
-import { useRealtimeGateway } from "@/lib/hooks/use-realtime-gateway";
+import type { AdminEntityKey } from "@/lib/admin/types";
+import { useAdminPanelMetadata } from "@/lib/hooks/use-admin-panel";
 
 function getEntityHref(entityKey: AdminEntityKey): string {
   switch (entityKey) {
     case "settings":
       return "/admin/settings";
+    case "prayer_times":
+      return "/admin/prayer-times";
     case "profiles":
     case "posts":
       return "/admin/community";
@@ -38,58 +40,7 @@ function getEntityHref(entityKey: AdminEntityKey): string {
 }
 
 export default function AdminDashboardPage() {
-  const [data, setData] = useState<AdminEntitiesResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadDashboard() {
-      setLoading(true);
-      try {
-        const response = await fetch("/api/admin/entities", { cache: "no-store" });
-        const payload = (await response.json().catch(() => ({}))) as
-          | AdminEntitiesResponse
-          | { error?: string };
-
-        if (!response.ok) {
-          throw new Error(
-            ("error" in payload ? payload.error : undefined) ||
-              "Failed to load dashboard"
-          );
-        }
-
-        if (!cancelled) {
-          setData(payload as AdminEntitiesResponse);
-        }
-      } catch {
-        if (!cancelled) {
-          setData(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshTick]);
-
-  useRealtimeGateway({
-    enabled: Boolean(data?.realtimeFeed),
-    feedStreamId: data?.realtimeFeed,
-    onEvent: () => {
-      startTransition(() => {
-        setRefreshTick((current) => current + 1);
-      });
-    },
-  });
+  const { data, loading, refresh } = useAdminPanelMetadata();
 
   const entityCount = data?.entities.length ?? 0;
   const totalRecords = (data?.entities ?? []).reduce(
@@ -129,6 +80,12 @@ export default function AdminDashboardPage() {
             <Button variant="outline">
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Global Settings
+            </Button>
+          </Link>
+          <Link href="/admin/prayer-times">
+            <Button variant="outline">
+              <Clock3 className="mr-2 h-4 w-4" />
+              Prayer Times
             </Button>
           </Link>
         </div>
@@ -196,7 +153,7 @@ export default function AdminDashboardPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => setRefreshTick((current) => current + 1)}
+            onClick={refresh}
           >
             Refresh
           </Button>

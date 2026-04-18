@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { AdminActivityEntry } from "@/lib/admin/types";
-import { ADMIN_REALTIME_FEED } from "./defaults";
+import type { AdminSession } from "./auth";
+import { resolveManagementRealtimeFeed } from "./defaults";
 
 function isMissingRelationError(error: unknown): boolean {
   return (
@@ -28,20 +29,31 @@ function isMissingRealtimeChannelsColumnError(error: unknown): boolean {
 }
 
 export async function listAdminActivity(input?: {
+  session?: AdminSession;
   limit?: number;
   entityType?: string;
 }): Promise<AdminActivityEntry[]> {
+  if (input?.session?.role === "imam" && !input.session.mosqueId) {
+    return [];
+  }
+
   const supabase = await createClient();
   const limit = Math.max(1, Math.min(input?.limit ?? 12, 50));
+  const feedStreamId = input?.session
+    ? resolveManagementRealtimeFeed(input.session)
+    : null;
 
   let query = supabase
     .from("realtime_events")
     .select(
       "event_id, event_type, entity_type, entity_id, actor_user_id, occurred_at, payload, channels"
     )
-    .contains("channels", [`feed:${ADMIN_REALTIME_FEED}`])
     .order("event_id", { ascending: false })
-    .limit(limit);
+    .limit(feedStreamId ? Math.max(limit * 5, 50) : limit);
+
+  if (feedStreamId) {
+    query = query.contains("channels", [`feed:${feedStreamId}`]);
+  }
 
   if (input?.entityType) {
     query = query.eq("entity_type", input.entityType);
@@ -83,7 +95,7 @@ export async function listAdminActivity(input?: {
     ])
   );
 
-  return rows.map((row) => ({
+  return rows.slice(0, limit).map((row) => ({
     eventId: row.event_id,
     eventType: row.event_type,
     entityType: row.entity_type,

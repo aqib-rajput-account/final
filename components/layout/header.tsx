@@ -23,7 +23,8 @@ import {
   MessageSquare,
   ChevronDown,
   PanelTop,
-  Crown
+  Crown,
+  BookOpen
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuth } from '@/lib/auth'
@@ -58,6 +59,7 @@ export function Header() {
 
   const canAccessAdminPanel = resolvedRole === 'admin' || resolvedRole === 'super_admin'
   const canAccessSuperAdminPanel = isSuperAdmin
+  const canAccessImamPanel = resolvedRole === 'imam' || resolvedRole === 'super_admin'
   const canAccessShuraPanel = isShura
 
   useEffect(() => {
@@ -119,7 +121,7 @@ export function Header() {
 
         <div className="flex items-center gap-2">
           {/* Role-based navigation */}
-          {mounted && isSignedIn && (canAccessShuraPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
+          {mounted && isSignedIn && (canAccessShuraPanel || canAccessImamPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="hidden md:inline-flex gap-2 rounded-xl border-border/60">
@@ -145,6 +147,14 @@ export function Header() {
                     <Link href="/admin" className="flex items-center cursor-pointer">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Admin Panel
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {canAccessImamPanel && (
+                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
+                    <Link href="/imam" className="flex items-center cursor-pointer">
+                      <BookOpen className="mr-2 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      Imam Panel
                     </Link>
                   </DropdownMenuItem>
                 )}
@@ -294,7 +304,7 @@ export function Header() {
             
             <div className="my-4 border-t border-border/40" />
 
-            {isSignedIn && (canAccessShuraPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
+            {isSignedIn && (canAccessShuraPanel || canAccessImamPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
               <div className="space-y-1.5 mb-4">
                 <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-2">Management</p>
                 {canAccessSuperAdminPanel && (
@@ -315,6 +325,16 @@ export function Header() {
                   >
                     <Shield className="h-5 w-5" />
                     Shura Panel
+                  </Link>
+                )}
+                {canAccessImamPanel && (
+                  <Link
+                    href="/imam"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-emerald-700 bg-emerald-50/70 dark:bg-emerald-950/30 dark:text-emerald-300 active:scale-95 transition-all"
+                  >
+                    <BookOpen className="h-5 w-5" />
+                    Imam Panel
                   </Link>
                 )}
                 {canAccessAdminPanel && (

@@ -9,15 +9,29 @@ function isMissingRealtimeChannelsColumnError(error: unknown) {
   return message.toLowerCase().includes("could not find the 'channels' column of 'realtime_events'") || message.toLowerCase().includes('column "channels"')
 }
 
-export function buildRealtimeChannels(input: { targetUserIds?: string[]; feedStreamId?: string }): string[] {
+export function buildRealtimeChannels(input: {
+  targetUserIds?: string[]
+  feedStreamId?: string
+  feedStreamIds?: string[]
+}): string[] {
   const channels = new Set<string>()
 
   for (const userId of input.targetUserIds ?? []) {
     if (userId) channels.add(`user:${userId}`)
   }
 
+  const feedStreamIds = new Set<string>()
   if (input.feedStreamId) {
-    channels.add(`feed:${input.feedStreamId}`)
+    feedStreamIds.add(input.feedStreamId)
+  }
+  for (const feedStreamId of input.feedStreamIds ?? []) {
+    if (feedStreamId) {
+      feedStreamIds.add(feedStreamId)
+    }
+  }
+
+  for (const feedStreamId of feedStreamIds) {
+    channels.add(`feed:${feedStreamId}`)
   }
 
   return [...channels]
@@ -56,6 +70,7 @@ export async function publishRealtimeEvent<TPayload extends Record<string, unkno
   const channels = buildRealtimeChannels({
     targetUserIds: [input.actorUserId, ...filteredTargetUserIds],
     feedStreamId: input.feedStreamId,
+    feedStreamIds: input.feedStreamIds,
   })
 
   const version = input.version ?? REALTIME_EVENT_VERSION
