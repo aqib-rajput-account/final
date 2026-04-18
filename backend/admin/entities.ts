@@ -1,0 +1,407 @@
+import type {
+  AdminEntityAction,
+  AdminEntityKey,
+  AdminFieldConfig,
+  AdminUserRole,
+} from "@/lib/admin/types";
+import { ADMIN_SETTINGS_SINGLETON_ID } from "./defaults";
+
+export interface AdminEntityDefinition {
+  key: AdminEntityKey;
+  label: string;
+  singularLabel: string;
+  description: string;
+  table: string;
+  primaryKey: string;
+  listFields: string[];
+  formFields: AdminFieldConfig[];
+  searchColumns: string[];
+  searchPlaceholder?: string;
+  permissions: Record<AdminEntityAction, AdminUserRole[]>;
+  singleton?: boolean;
+  singletonId?: string;
+  lookupKeys?: string[];
+}
+
+const roleOptions = [
+  { value: "member", label: "Member" },
+  { value: "imam", label: "Imam" },
+  { value: "shura", label: "Shura" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super Admin" },
+];
+
+const languageOptions = [
+  { value: "en", label: "English" },
+  { value: "ar", label: "Arabic" },
+  { value: "ur", label: "Urdu" },
+  { value: "bn", label: "Bengali" },
+  { value: "tr", label: "Turkish" },
+  { value: "ms", label: "Malay" },
+];
+
+export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinition> = {
+  mosques: {
+    key: "mosques",
+    label: "Mosques",
+    singularLabel: "Mosque",
+    description: "Manage the mosque directory, contact information, and verification state.",
+    table: "mosques",
+    primaryKey: "id",
+    listFields: ["name", "city", "state", "capacity", "is_verified"],
+    searchColumns: ["name", "city", "state", "address"],
+    searchPlaceholder: "Search mosques by name, city, or address",
+    lookupKeys: [],
+    permissions: {
+      read: ["shura", "admin", "super_admin"],
+      create: ["admin", "super_admin"],
+      update: ["admin", "super_admin"],
+      delete: ["super_admin"],
+    },
+    formFields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "address", label: "Address", type: "textarea", required: true },
+      { key: "city", label: "City", type: "text", required: true },
+      { key: "state", label: "State", type: "text", required: true },
+      { key: "country", label: "Country", type: "text", required: true },
+      { key: "zip_code", label: "Zip Code", type: "text" },
+      { key: "phone", label: "Phone", type: "tel" },
+      { key: "email", label: "Email", type: "email" },
+      { key: "website", label: "Website", type: "text" },
+      { key: "description", label: "Description", type: "textarea" },
+      { key: "capacity", label: "Capacity", type: "number" },
+      { key: "established_year", label: "Established Year", type: "number" },
+      { key: "is_verified", label: "Verified", type: "boolean" },
+    ],
+  },
+  events: {
+    key: "events",
+    label: "Events",
+    singularLabel: "Event",
+    description: "Manage calendar entries, publishing state, and registration details.",
+    table: "events",
+    primaryKey: "id",
+    listFields: ["title", "mosque_id", "event_type", "start_date", "is_published"],
+    searchColumns: ["title", "description", "location"],
+    searchPlaceholder: "Search events by title, description, or location",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["shura", "admin", "super_admin"],
+      create: ["shura", "admin", "super_admin"],
+      update: ["shura", "admin", "super_admin"],
+      delete: ["admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "title", label: "Title", type: "text", required: true },
+      {
+        key: "event_type",
+        label: "Type",
+        type: "select",
+        options: [
+          { value: "general", label: "General" },
+          { value: "jummah", label: "Jummah" },
+          { value: "lecture", label: "Lecture" },
+          { value: "community", label: "Community" },
+          { value: "youth", label: "Youth" },
+          { value: "fundraising", label: "Fundraising" },
+        ],
+      },
+      { key: "start_date", label: "Start", type: "datetime", required: true },
+      { key: "end_date", label: "End", type: "datetime" },
+      { key: "location", label: "Location", type: "text" },
+      { key: "description", label: "Description", type: "textarea" },
+      { key: "registration_required", label: "Registration Required", type: "boolean" },
+      { key: "max_attendees", label: "Max Attendees", type: "number" },
+      { key: "is_recurring", label: "Recurring", type: "boolean" },
+      { key: "recurrence_pattern", label: "Recurrence Pattern", type: "text" },
+      { key: "is_published", label: "Published", type: "boolean" },
+    ],
+  },
+  announcements: {
+    key: "announcements",
+    label: "Announcements",
+    singularLabel: "Announcement",
+    description: "Manage mosque alerts, notices, and time-bound announcements.",
+    table: "announcements",
+    primaryKey: "id",
+    listFields: ["title", "mosque_id", "priority", "published_at", "is_published"],
+    searchColumns: ["title", "content"],
+    searchPlaceholder: "Search announcements by title or content",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["shura", "admin", "super_admin"],
+      create: ["shura", "admin", "super_admin"],
+      update: ["shura", "admin", "super_admin"],
+      delete: ["admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "title", label: "Title", type: "text", required: true },
+      { key: "content", label: "Content", type: "textarea", required: true },
+      {
+        key: "priority",
+        label: "Priority",
+        type: "select",
+        options: [
+          { value: "low", label: "Low" },
+          { value: "normal", label: "Normal" },
+          { value: "high", label: "High" },
+          { value: "urgent", label: "Urgent" },
+        ],
+      },
+      { key: "published_at", label: "Published At", type: "datetime" },
+      { key: "expires_at", label: "Expires At", type: "datetime" },
+      { key: "is_published", label: "Published", type: "boolean" },
+    ],
+  },
+  imams: {
+    key: "imams",
+    label: "Imams",
+    singularLabel: "Imam",
+    description: "Manage imam assignments, bios, contact details, and active status.",
+    table: "imams",
+    primaryKey: "id",
+    listFields: ["name", "mosque_id", "title", "experience_years", "is_active"],
+    searchColumns: ["name", "title", "bio", "education"],
+    searchPlaceholder: "Search imams by name, title, or biography",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["shura", "admin", "super_admin"],
+      create: ["shura", "admin", "super_admin"],
+      update: ["shura", "admin", "super_admin"],
+      delete: ["admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "title", label: "Title", type: "text" },
+      { key: "specializations", label: "Specializations", type: "tags" },
+      { key: "education", label: "Education", type: "textarea" },
+      { key: "experience_years", label: "Experience Years", type: "number" },
+      { key: "languages", label: "Languages", type: "tags" },
+      { key: "bio", label: "Biography", type: "textarea" },
+      { key: "email", label: "Email", type: "email" },
+      { key: "phone", label: "Phone", type: "tel" },
+      { key: "appointed_date", label: "Appointed Date", type: "date" },
+      { key: "is_active", label: "Active", type: "boolean" },
+    ],
+  },
+  donations: {
+    key: "donations",
+    label: "Donations",
+    singularLabel: "Donation",
+    description: "Manage donation records, status, and finance-related metadata.",
+    table: "donations",
+    primaryKey: "id",
+    listFields: ["mosque_id", "amount", "donation_type", "status", "created_at"],
+    searchColumns: ["donation_type", "transaction_id", "notes"],
+    searchPlaceholder: "Search donations by type, transaction ID, or notes",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["admin", "super_admin"],
+      create: ["admin", "super_admin"],
+      update: ["admin", "super_admin"],
+      delete: ["super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "amount", label: "Amount", type: "number", required: true },
+      { key: "currency", label: "Currency", type: "text" },
+      { key: "donation_type", label: "Donation Type", type: "text" },
+      { key: "payment_method", label: "Payment Method", type: "text" },
+      { key: "transaction_id", label: "Transaction ID", type: "text" },
+      { key: "is_anonymous", label: "Anonymous", type: "boolean" },
+      { key: "is_recurring", label: "Recurring", type: "boolean" },
+      {
+        key: "status",
+        label: "Status",
+        type: "select",
+        options: [
+          { value: "pending", label: "Pending" },
+          { value: "completed", label: "Completed" },
+          { value: "failed", label: "Failed" },
+          { value: "refunded", label: "Refunded" },
+        ],
+      },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+  },
+  posts: {
+    key: "posts",
+    label: "Posts",
+    singularLabel: "Post",
+    description: "Moderate posts, visibility rules, and publish state from one place.",
+    table: "posts",
+    primaryKey: "id",
+    listFields: ["content", "mosque_id", "visibility", "likes_count", "is_published"],
+    searchColumns: ["content", "category"],
+    searchPlaceholder: "Search posts by content or category",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["shura", "admin", "super_admin"],
+      create: ["admin", "super_admin"],
+      update: ["admin", "super_admin"],
+      delete: ["admin", "super_admin"],
+    },
+    formFields: [
+      { key: "content", label: "Content", type: "textarea", required: true },
+      { key: "mosque_id", label: "Mosque", type: "select", lookup: "mosques" },
+      {
+        key: "visibility",
+        label: "Visibility",
+        type: "select",
+        options: [
+          { value: "public", label: "Public" },
+          { value: "followers", label: "Followers" },
+          { value: "private", label: "Private" },
+        ],
+      },
+      { key: "post_type", label: "Post Type", type: "text" },
+      { key: "category", label: "Category", type: "text" },
+      { key: "image_url", label: "Image URL", type: "text" },
+      { key: "metadata", label: "Metadata", type: "json" },
+      { key: "is_published", label: "Published", type: "boolean" },
+    ],
+  },
+  profiles: {
+    key: "profiles",
+    label: "Profiles",
+    singularLabel: "Profile",
+    description: "Review profiles, roles, activation state, and visibility metadata.",
+    table: "profiles",
+    primaryKey: "id",
+    listFields: ["full_name", "email", "role", "mosque_id", "is_active"],
+    searchColumns: ["full_name", "email", "username"],
+    searchPlaceholder: "Search users by name, email, or username",
+    lookupKeys: ["mosques"],
+    permissions: {
+      read: ["admin", "super_admin"],
+      create: [],
+      update: ["admin", "super_admin"],
+      delete: ["super_admin"],
+    },
+    formFields: [
+      { key: "id", label: "Profile ID", type: "text", readOnly: true },
+      { key: "full_name", label: "Full Name", type: "text" },
+      { key: "email", label: "Email", type: "email" },
+      { key: "username", label: "Username", type: "text" },
+      {
+        key: "role",
+        label: "Role",
+        type: "select",
+        required: true,
+        options: roleOptions,
+      },
+      { key: "mosque_id", label: "Mosque", type: "select", lookup: "mosques" },
+      { key: "phone", label: "Phone", type: "tel" },
+      { key: "bio", label: "Biography", type: "textarea" },
+      { key: "is_verified", label: "Verified", type: "boolean" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "privacy_settings", label: "Privacy Settings", type: "json" },
+      { key: "metadata", label: "Metadata", type: "json" },
+    ],
+  },
+  settings: {
+    key: "settings",
+    label: "Settings",
+    singularLabel: "Settings",
+    description: "Control global modules, live behavior, and Shura permissions from a singleton config.",
+    table: "admin_settings",
+    primaryKey: "id",
+    listFields: ["site_name", "default_timezone", "default_language", "updated_at"],
+    searchColumns: ["site_name", "site_description", "contact_email"],
+    permissions: {
+      read: ["admin", "super_admin"],
+      create: ["admin", "super_admin"],
+      update: ["admin", "super_admin"],
+      delete: [],
+    },
+    singleton: true,
+    singletonId: ADMIN_SETTINGS_SINGLETON_ID,
+    lookupKeys: [],
+    formFields: [
+      { key: "site_name", label: "Site Name", type: "text", required: true },
+      { key: "site_description", label: "Site Description", type: "textarea" },
+      { key: "contact_email", label: "Contact Email", type: "email" },
+      { key: "support_phone", label: "Support Phone", type: "tel" },
+      { key: "default_timezone", label: "Default Timezone", type: "text", required: true },
+      {
+        key: "default_language",
+        label: "Default Language",
+        type: "select",
+        required: true,
+        options: languageOptions,
+      },
+      {
+        key: "date_format",
+        label: "Date Format",
+        type: "select",
+        required: true,
+        options: [
+          { value: "MM/dd/yyyy", label: "MM/DD/YYYY" },
+          { value: "dd/MM/yyyy", label: "DD/MM/YYYY" },
+          { value: "yyyy-MM-dd", label: "YYYY-MM-DD" },
+        ],
+      },
+      {
+        key: "calculation_method",
+        label: "Prayer Calculation",
+        type: "select",
+        required: true,
+        options: [
+          { value: "isna", label: "ISNA" },
+          { value: "mwl", label: "Muslim World League" },
+          { value: "egypt", label: "Egyptian General Authority" },
+          { value: "makkah", label: "Umm Al-Qura" },
+          { value: "karachi", label: "University of Karachi" },
+        ],
+      },
+      {
+        key: "notification_settings",
+        label: "Notification Settings",
+        type: "json",
+      },
+      { key: "privacy_settings", label: "Privacy Settings", type: "json" },
+      { key: "module_settings", label: "Module Settings", type: "json" },
+      { key: "shura_permissions", label: "Shura Permissions", type: "json" },
+      { key: "metadata", label: "Metadata", type: "json" },
+    ],
+  },
+};
+
+export function getAdminEntityDefinition(entityKey: string): AdminEntityDefinition | null {
+  if (!(entityKey in ADMIN_ENTITY_DEFINITIONS)) {
+    return null;
+  }
+
+  return ADMIN_ENTITY_DEFINITIONS[entityKey as AdminEntityKey];
+}
+
+export function listAdminEntityDefinitions(): AdminEntityDefinition[] {
+  return Object.values(ADMIN_ENTITY_DEFINITIONS);
+}

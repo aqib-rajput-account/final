@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import {
   LayoutDashboard,
+  Database,
   Building2,
   Calendar,
   DollarSign,
@@ -30,6 +31,7 @@ import { getRoleDisplayName } from "@/lib/auth"
 
 const sidebarItems = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
+  { name: "Control Center", href: "/admin/control-center", icon: Database },
   { name: "Mosques", href: "/admin/mosques", icon: Building2 },
   { name: "Events", href: "/admin/events", icon: Calendar },
   { name: "Finance", href: "/admin/finance", icon: DollarSign },

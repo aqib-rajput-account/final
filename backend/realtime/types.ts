@@ -1,5 +1,7 @@
 export const REALTIME_EVENT_VERSION = 1
 
+type GenericCrudRealtimeEventType = `${string}.${'created' | 'updated' | 'deleted'}`
+
 export type RealtimeEventType =
   | 'post.created'
   | 'post.updated'
@@ -11,12 +13,15 @@ export type RealtimeEventType =
   | 'comment.deleted'
   | 'follow.created'
   | 'follow.deleted'
+  | GenericCrudRealtimeEventType
+
+export type RealtimeEntityType = 'post' | 'comment' | 'follow' | 'feed' | string
 
 export interface RealtimeEventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> {
   eventId: number
   version: number
   eventType: RealtimeEventType
-  entityType: 'post' | 'comment' | 'follow' | 'feed'
+  entityType: RealtimeEntityType
   entityId: string
   actorUserId: string
   occurredAt: string
@@ -27,7 +32,7 @@ export interface RealtimeEventEnvelope<TPayload extends Record<string, unknown> 
 
 export interface PublishRealtimeEventInput<TPayload extends Record<string, unknown>> {
   eventType: RealtimeEventType
-  entityType: RealtimeEventEnvelope['entityType']
+  entityType: RealtimeEntityType
   entityId: string
   actorUserId: string
   payload: TPayload

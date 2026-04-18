@@ -379,7 +379,77 @@ CREATE POLICY "announcements_update" ON public.announcements FOR UPDATE USING (t
 
 
 -- =====================
--- 12. DONATIONS
+-- 13. ADMIN SETTINGS
+-- =====================
+CREATE TABLE IF NOT EXISTS public.admin_settings (
+  id TEXT PRIMARY KEY DEFAULT 'app',
+  site_name TEXT NOT NULL DEFAULT 'MosqueConnect',
+  site_description TEXT,
+  contact_email TEXT,
+  support_phone TEXT,
+  default_timezone TEXT NOT NULL DEFAULT 'America/New_York',
+  default_language TEXT NOT NULL DEFAULT 'en',
+  date_format TEXT NOT NULL DEFAULT 'MM/dd/yyyy',
+  calculation_method TEXT NOT NULL DEFAULT 'isna',
+  notification_settings JSONB NOT NULL DEFAULT '{
+    "emailNotifications": true,
+    "pushNotifications": true,
+    "prayerReminders": true,
+    "eventReminders": true,
+    "weeklyDigest": false
+  }'::jsonb,
+  privacy_settings JSONB NOT NULL DEFAULT '{
+    "publicProfiles": false,
+    "showMemberCount": true,
+    "allowAnonymousDonations": true,
+    "dataRetention": "365"
+  }'::jsonb,
+  module_settings JSONB NOT NULL DEFAULT '{
+    "mosques": true,
+    "events": true,
+    "announcements": true,
+    "imams": true,
+    "donations": true,
+    "community": true,
+    "posts": true,
+    "adminControlCenter": true,
+    "shuraReadAccess": true
+  }'::jsonb,
+  shura_permissions JSONB NOT NULL DEFAULT '{
+    "mosques": { "read": true, "create": false, "update": false, "delete": false },
+    "events": { "read": true, "create": false, "update": false, "delete": false },
+    "announcements": { "read": true, "create": false, "update": false, "delete": false },
+    "imams": { "read": true, "create": false, "update": false, "delete": false },
+    "donations": { "read": false, "create": false, "update": false, "delete": false },
+    "posts": { "read": true, "create": false, "update": false, "delete": false },
+    "profiles": { "read": false, "create": false, "update": false, "delete": false },
+    "settings": { "read": false, "create": false, "update": false, "delete": false }
+  }'::jsonb,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_by TEXT REFERENCES public.profiles(id) ON DELETE SET NULL,
+  updated_by TEXT REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT admin_settings_singleton CHECK (id = 'app')
+);
+
+ALTER TABLE public.admin_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "admin_settings_select" ON public.admin_settings;
+CREATE POLICY "admin_settings_select" ON public.admin_settings FOR SELECT USING (true);
+DROP POLICY IF EXISTS "admin_settings_insert" ON public.admin_settings;
+CREATE POLICY "admin_settings_insert" ON public.admin_settings FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "admin_settings_update" ON public.admin_settings;
+CREATE POLICY "admin_settings_update" ON public.admin_settings FOR UPDATE USING (true);
+
+DROP TRIGGER IF EXISTS admin_settings_updated_at ON public.admin_settings;
+CREATE TRIGGER admin_settings_updated_at
+  BEFORE UPDATE ON public.admin_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+
+-- =====================
+-- 14. DONATIONS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.donations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -405,7 +475,7 @@ CREATE POLICY "donations_insert" ON public.donations FOR INSERT WITH CHECK (true
 
 
 -- =====================
--- 13. SHURA MEMBERS
+-- 15. SHURA MEMBERS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.shura_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -430,7 +500,7 @@ CREATE POLICY "shura_members_update" ON public.shura_members FOR UPDATE USING (t
 
 
 -- =====================
--- 14. CONVERSATIONS
+-- 16. CONVERSATIONS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -452,7 +522,7 @@ CREATE POLICY "conversations_update" ON public.conversations FOR UPDATE USING (t
 
 
 -- =====================
--- 15. CONVERSATION PARTICIPANTS
+-- 17. CONVERSATION PARTICIPANTS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.conversation_participants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -484,7 +554,7 @@ CREATE POLICY "conv_participants_update" ON public.conversation_participants FOR
 
 
 -- =====================
--- 16. MESSAGES
+-- 18. MESSAGES
 -- =====================
 CREATE TABLE IF NOT EXISTS public.messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -522,7 +592,7 @@ ALTER TABLE public.conversation_participants
 
 
 -- =====================
--- 17. MESSAGE READS
+-- 19. MESSAGE READS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.message_reads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -540,7 +610,7 @@ CREATE POLICY "message_reads_insert" ON public.message_reads FOR INSERT WITH CHE
 
 
 -- =====================
--- 18. MESSAGE ATTACHMENTS
+-- 20. MESSAGE ATTACHMENTS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.message_attachments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -569,7 +639,7 @@ CREATE POLICY "message_attachments_delete" ON public.message_attachments FOR DEL
 
 
 -- =====================
--- 19. MESSAGE REACTIONS
+-- 21. MESSAGE REACTIONS
 -- =====================
 CREATE TABLE IF NOT EXISTS public.message_reactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
