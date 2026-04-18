@@ -119,7 +119,7 @@ function ConfiguredAuthProvider({ children }: { children: React.ReactNode }) {
   const { signOut: clerkSignOut } = useClerk();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [suggestedUsername, setSuggestedUsername] = useState<string | null>(null);
   const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [{ supabase, supabaseError }] = useState(() => {
