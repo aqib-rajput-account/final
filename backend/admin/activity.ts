@@ -11,6 +11,22 @@ function isMissingRelationError(error: unknown): boolean {
   );
 }
 
+function isMissingRealtimeChannelsColumnError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" &&
+          error !== null &&
+          "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : "";
+
+  return (
+    message.toLowerCase().includes("could not find the 'channels' column") ||
+    message.toLowerCase().includes('column "channels"')
+  );
+}
+
 export async function listAdminActivity(input?: {
   limit?: number;
   entityType?: string;
@@ -34,7 +50,7 @@ export async function listAdminActivity(input?: {
   const { data, error } = await query;
 
   if (error) {
-    if (isMissingRelationError(error)) {
+    if (isMissingRelationError(error) || isMissingRealtimeChannelsColumnError(error)) {
       return [];
     }
 
@@ -44,7 +60,7 @@ export async function listAdminActivity(input?: {
   const rows = data ?? [];
   const actorIds = [...new Set(rows.map((row) => row.actor_user_id).filter(Boolean))];
 
-  const { data: profiles } = actorIds.length
+  const profileQueryResult = actorIds.length
     ? await supabase
         .from("profiles")
         .select("id, full_name, email")
@@ -55,7 +71,10 @@ export async function listAdminActivity(input?: {
           full_name: string | null;
           email: string | null;
         }>,
+        error: null,
       };
+
+  const profiles = profileQueryResult.error ? [] : profileQueryResult.data;
 
   const actorMap = new Map(
     (profiles ?? []).map((profile) => [

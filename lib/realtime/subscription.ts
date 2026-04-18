@@ -70,7 +70,13 @@ export class RealtimeGatewayClient {
       this.channels.push(channel)
     }
 
-    await this.catchUp()
+    try {
+      await this.catchUp()
+    } catch (error) {
+      this.options.onError?.(
+        error instanceof Error ? error : new Error('Failed to catch up realtime events')
+      )
+    }
     observeClientMetric('realtime.connect.latency_ms', Date.now() - startedAt, {
       channelCount: connectionInfo.channels.length,
     })

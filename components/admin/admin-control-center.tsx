@@ -239,8 +239,10 @@ export function AdminControlCenter({
   );
   const [entityData, setEntityData] = useState<AdminListResponse | null>(null);
   const [activity, setActivity] = useState<AdminActivityEntry[]>([]);
+  const [activityUnavailable, setActivityUnavailable] = useState(false);
   const [loadingEntity, setLoadingEntity] = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false);
+  const [realtimeIssue, setRealtimeIssue] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [refreshTick, setRefreshTick] = useState(0);
@@ -355,6 +357,9 @@ export function AdminControlCenter({
 
         if (!cancelled) {
           setEntityData(payload as AdminListResponse);
+          setRealtimeIssue((current) =>
+            current?.includes("Failed to catch up") ? null : current
+          );
         }
       } catch (error) {
         if (!cancelled) {
@@ -398,21 +403,21 @@ export function AdminControlCenter({
           | { error?: string };
 
         if (!response.ok) {
-          throw new Error(
-            ("error" in payload ? payload.error : undefined) ||
-              "Failed to load activity"
-          );
+          if (!cancelled) {
+            setActivity([]);
+            setActivityUnavailable(true);
+          }
+          return;
         }
 
         if (!cancelled) {
           setActivity((payload as AdminActivityResponse).items);
+          setActivityUnavailable(false);
         }
       } catch (error) {
         if (!cancelled) {
-          toast.error(
-            error instanceof Error ? error.message : "Failed to load activity"
-          );
           setActivity([]);
+          setActivityUnavailable(true);
         }
       } finally {
         if (!cancelled) {
@@ -432,6 +437,7 @@ export function AdminControlCenter({
     enabled: Boolean(metadata?.realtimeFeed),
     feedStreamId: metadata?.realtimeFeed,
     onEvent: (event) => {
+      setRealtimeIssue(null);
       if (!selectedEntityKey) {
         refreshMetadata();
         return;
@@ -447,7 +453,7 @@ export function AdminControlCenter({
       });
     },
     onError: (error) => {
-      toast.error(error.message);
+      setRealtimeIssue(error.message);
     },
   });
 
@@ -695,6 +701,9 @@ export function AdminControlCenter({
               <Shield className="h-3.5 w-3.5" />
               Registry CRUD
             </Badge>
+            {realtimeIssue ? (
+              <Badge variant="outline">Manual Refresh Fallback</Badge>
+            ) : null}
             {metadata?.settingsWritable ? (
               <Badge variant="secondary">Settings Ready</Badge>
             ) : (
@@ -781,7 +790,9 @@ export function AdminControlCenter({
               {loadingActivity ? "..." : activity.length}
             </div>
             <p className="text-xs text-muted-foreground">
-              Latest realtime mutations for this entity
+              {activityUnavailable
+                ? "Activity is temporarily unavailable; CRUD remains active."
+                : "Latest realtime mutations for this entity"}
             </p>
           </CardContent>
         </Card>
@@ -1042,7 +1053,12 @@ export function AdminControlCenter({
 
           <Card>
             <CardHeader>
-              <CardTitle>Recent Entity Activity</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>Recent Entity Activity</CardTitle>
+                {activityUnavailable ? (
+                  <Badge variant="outline">Activity Feed Unavailable</Badge>
+                ) : null}
+              </div>
               <CardDescription>
                 The latest admin mutations for {selectedEntity.label.toLowerCase()}.
               </CardDescription>

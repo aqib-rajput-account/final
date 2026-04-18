@@ -22,7 +22,8 @@ import {
   Settings,
   MessageSquare,
   ChevronDown,
-  PanelTop
+  PanelTop,
+  Crown
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuth } from '@/lib/auth'
@@ -51,9 +52,13 @@ export function Header() {
   const pathname = usePathname()
   const router = useRouter()
   const { setTheme } = useTheme()
-  const { profile, signOut, loading, isAdmin, isShura, isSignedIn, resolvedRole } = useAuth()
+  const { profile, signOut, loading, isAdmin, isShura, isSignedIn, resolvedRole, isSuperAdmin } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+
+  const canAccessAdminPanel = resolvedRole === 'admin' || resolvedRole === 'super_admin'
+  const canAccessSuperAdminPanel = isSuperAdmin
+  const canAccessShuraPanel = isShura
 
   useEffect(() => {
     setMounted(true)
@@ -114,7 +119,7 @@ export function Header() {
 
         <div className="flex items-center gap-2">
           {/* Role-based navigation */}
-          {mounted && isSignedIn && (isShura || isAdmin) && (
+          {mounted && isSignedIn && (canAccessShuraPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="hidden md:inline-flex gap-2 rounded-xl border-border/60">
@@ -127,7 +132,15 @@ export function Header() {
                 <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Panel
                 </div>
-                {isAdmin && (
+                {canAccessSuperAdminPanel && (
+                  <DropdownMenuItem asChild className="rounded-lg my-0.5">
+                    <Link href="/super-admin" className="flex items-center cursor-pointer">
+                      <Crown className="mr-2 h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      Super Admin Panel
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {canAccessAdminPanel && (
                   <DropdownMenuItem asChild className="rounded-lg my-0.5">
                     <Link href="/admin" className="flex items-center cursor-pointer">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -135,7 +148,7 @@ export function Header() {
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {isShura && (
+                {canAccessShuraPanel && (
                   <DropdownMenuItem asChild className="rounded-lg my-0.5">
                     <Link href="/shura" className="flex items-center cursor-pointer">
                       <Shield className="mr-2 h-4 w-4 text-teal-600 dark:text-teal-400" />
@@ -281,10 +294,20 @@ export function Header() {
             
             <div className="my-4 border-t border-border/40" />
 
-            {isSignedIn && (isShura || isAdmin) && (
+            {isSignedIn && (canAccessShuraPanel || canAccessAdminPanel || canAccessSuperAdminPanel) && (
               <div className="space-y-1.5 mb-4">
                 <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-2">Management</p>
-                {isShura && (
+                {canAccessSuperAdminPanel && (
+                  <Link
+                    href="/super-admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-amber-700 bg-amber-50/80 dark:bg-amber-950/30 dark:text-amber-300 active:scale-95 transition-all"
+                  >
+                    <Crown className="h-5 w-5" />
+                    Super Admin Panel
+                  </Link>
+                )}
+                {canAccessShuraPanel && (
                   <Link
                     href="/shura"
                     onClick={() => setMobileMenuOpen(false)}
@@ -294,14 +317,14 @@ export function Header() {
                     Shura Panel
                   </Link>
                 )}
-                {isAdmin && (
+                {canAccessAdminPanel && (
                   <Link
                     href="/admin"
                     onClick={() => setMobileMenuOpen(false)}
                     className="flex items-center gap-4 rounded-xl px-4 py-3 text-base font-semibold text-primary bg-primary/5 active:scale-95 transition-all"
                   >
                     <LayoutDashboard className="h-5 w-5" />
-                    Admin Dashboard
+                    Admin Panel
                   </Link>
                 )}
               </div>

@@ -78,11 +78,20 @@ function formatActivityLabel(item: AdminActivityEntry): string {
   )}`;
 }
 
-export function AdminSettingsConsole() {
+interface AdminSettingsConsoleProps {
+  title?: string;
+  description?: string;
+}
+
+export function AdminSettingsConsole({
+  title = "Application Settings",
+  description = "Control modules, notification defaults, privacy behavior, and Shura permissions from one live settings surface.",
+}: AdminSettingsConsoleProps) {
   const { data: metadata, loading: metadataLoading, error, refresh } =
     useAdminPanelMetadata();
   const [settings, setSettings] = useState<SettingsFormState | null>(null);
   const [activity, setActivity] = useState<AdminActivityEntry[]>([]);
+  const [activityUnavailable, setActivityUnavailable] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -101,17 +110,22 @@ export function AdminSettingsConsole() {
     async function loadSettings() {
       setLoadingSettings(true);
       try {
-        const [settingsResponse, activityResponse] = await Promise.all([
-          fetch("/api/admin/entities/settings/app", { cache: "no-store" }),
-          fetch("/api/admin/activity?limit=8", { cache: "no-store" }),
-        ]);
+        const settingsResponse = await fetch("/api/admin/entities/settings/app", {
+          cache: "no-store",
+        });
+        const activityResponse = await fetch("/api/admin/activity?limit=8", {
+          cache: "no-store",
+        }).catch(() => null);
 
         const settingsPayload = (await settingsResponse
           .json()
           .catch(() => ({}))) as AdminItemResponse | { error?: string };
-        const activityPayload = (await activityResponse
-          .json()
-          .catch(() => ({}))) as AdminActivityResponse | { error?: string };
+        const activityPayload =
+          activityResponse != null
+            ? ((await activityResponse
+                .json()
+                .catch(() => ({}))) as AdminActivityResponse | { error?: string })
+            : null;
 
         if (!settingsResponse.ok) {
           throw new Error(
@@ -120,19 +134,22 @@ export function AdminSettingsConsole() {
           );
         }
 
-        if (!activityResponse.ok) {
-          throw new Error(
-            ("error" in activityPayload ? activityPayload.error : undefined) ||
-              "Failed to load admin activity"
-          );
-        }
-
         if (!cancelled) {
           if (!("item" in settingsPayload)) {
             throw new Error("Admin settings response was malformed");
           }
-          setActivity((activityPayload as AdminActivityResponse).items);
           setSettings(settingsPayload.item as unknown as SettingsFormState);
+          if (
+            activityResponse?.ok &&
+            activityPayload &&
+            "items" in activityPayload
+          ) {
+            setActivity(activityPayload.items);
+            setActivityUnavailable(false);
+          } else {
+            setActivity([]);
+            setActivityUnavailable(true);
+          }
         }
       } catch (nextError) {
         if (!cancelled) {
@@ -141,6 +158,8 @@ export function AdminSettingsConsole() {
               ? nextError.message
               : "Failed to load admin settings"
           );
+          setActivity([]);
+          setActivityUnavailable(true);
         }
       } finally {
         if (!cancelled) {
@@ -296,13 +315,8 @@ export function AdminSettingsConsole() {
               <Badge variant="destructive">Migration Required</Badge>
             )}
           </div>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight">
-            Application Settings
-          </h1>
-          <p className="text-muted-foreground">
-            Control modules, notification defaults, privacy behavior, and Shura
-            permissions from one live settings surface.
-          </p>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight">{title}</h1>
+          <p className="text-muted-foreground">{description}</p>
         </div>
         <Button onClick={handleSave} disabled={saving || !metadata?.settingsWritable}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -656,7 +670,12 @@ export function AdminSettingsConsole() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Recent Admin Activity</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>Recent Admin Activity</CardTitle>
+                {activityUnavailable ? (
+                  <Badge variant="outline">Activity Feed Unavailable</Badge>
+                ) : null}
+              </div>
               <CardDescription>
                 Latest control-plane actions captured through the realtime event bus.
               </CardDescription>

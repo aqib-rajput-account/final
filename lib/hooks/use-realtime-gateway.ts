@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { RealtimeGatewayClient } from '@/lib/realtime/subscription'
 import type { RealtimeEventEnvelope } from '@/backend/realtime/types'
 
 /**
  * Stable realtime gateway hook.
  * Uses refs for callbacks so the WebSocket connection is only established once
- * and never torn down / recreated due to callback identity changes.
+ * and never torn down or recreated due to callback identity changes.
  */
 export function useRealtimeGateway(options: {
   enabled?: boolean
@@ -20,7 +20,6 @@ export function useRealtimeGateway(options: {
   const onErrorRef = useRef(options.onError)
   const clientRef = useRef<RealtimeGatewayClient | null>(null)
 
-  // Keep refs current without triggering re-renders or reconnects
   useEffect(() => {
     onEventRef.current = options.onEvent
   }, [options.onEvent])
@@ -38,7 +37,9 @@ export function useRealtimeGateway(options: {
   }, [])
 
   useEffect(() => {
-    if (!options.enabled) return
+    if (!options.enabled) {
+      return
+    }
 
     const client = new RealtimeGatewayClient({
       feedStreamId: options.feedStreamId,
@@ -50,15 +51,22 @@ export function useRealtimeGateway(options: {
     clientRef.current = client
 
     client.connect().catch((error) => {
-      stableOnError(error instanceof Error ? error : new Error('Failed to connect realtime gateway'))
+      stableOnError(
+        error instanceof Error ? error : new Error('Failed to connect realtime gateway')
+      )
     })
 
     return () => {
       clientRef.current = null
       client.disconnect().catch(() => undefined)
     }
-    // Only reconnect when feedStreamId or enabled changes — NOT on callback changes
-  }, [options.enabled, options.feedStreamId, options.lastSeenEventId, stableOnEvent, stableOnError])
+  }, [
+    options.enabled,
+    options.feedStreamId,
+    options.lastSeenEventId,
+    stableOnEvent,
+    stableOnError,
+  ])
 
   return clientRef.current
 }
