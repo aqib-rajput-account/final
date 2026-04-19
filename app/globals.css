@@ -141,6 +141,23 @@
   .animate-in-post {
     animation: slide-down-fade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
+
+  /* Form Panel Utilities */
+  .form-panel {
+    @apply rounded-lg border border-border bg-card shadow-sm;
+  }
+
+  .form-section {
+    @apply flex flex-col gap-4;
+  }
+
+  .form-group {
+    @apply flex flex-col gap-2;
+  }
+
+  .input-field {
+    @apply h-10 rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors focus-within:ring-1 focus-within:ring-primary focus-within:border-primary;
+  }
 }
 
 @keyframes feed-refresh-glow {

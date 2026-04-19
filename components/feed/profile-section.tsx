@@ -389,120 +389,109 @@ function EditProfileDialog({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
+          <DialogTitle className="text-xl">Edit Profile</DialogTitle>
           <DialogDescription>
             Update your profile information
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Avatar */}
           <div className="flex items-center gap-4">
-            <Avatar className="h-20 w-20">
+            <Avatar className="h-16 w-16">
               <AvatarImage src={editForm.avatar || profile.avatar} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xl">
+              <AvatarFallback className="bg-primary text-primary-foreground text-lg font-semibold">
                 {(editForm.name || profile.name).split(' ').map(n => n[0]).join('')}
               </AvatarFallback>
             </Avatar>
             <Button variant="outline" size="sm">
-              <Camera className="h-4 w-4 mr-1.5" />
+              <Camera className="mr-2 h-4 w-4" />
               Change Photo
             </Button>
           </div>
 
-          {/* Name */}
-          <div>
-            <label className="text-sm font-medium">Name</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-name" className="text-sm font-medium">Name</label>
             <Input
+              id="edit-name"
               value={editForm.name || profile.name}
               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              className="mt-1.5"
             />
           </div>
 
-          {/* Username */}
-          <div>
-            <label className="text-sm font-medium">Username</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-username" className="text-sm font-medium">Username</label>
             <Input
+              id="edit-username"
               value={editForm.username || profile.username}
               onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-              className="mt-1.5"
             />
           </div>
 
-          {/* Bio */}
-          <div>
-            <label className="text-sm font-medium">Bio</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-bio" className="text-sm font-medium">Bio</label>
             <Textarea
+              id="edit-bio"
               value={editForm.bio || profile.bio || ''}
               onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
-              className="mt-1.5"
-              rows={3}
               placeholder="Tell us about yourself..."
             />
           </div>
 
-          {/* Location */}
-          <div>
-            <label className="text-sm font-medium">Location</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-profession" className="text-sm font-medium">Profession</label>
             <Input
-              value={editForm.location || profile.location || ''}
-              onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-              className="mt-1.5"
-              placeholder="City, State"
-            />
-          </div>
-
-          {/* Profession */}
-          <div>
-            <label className="text-sm font-medium">Profession</label>
-            <Input
+              id="edit-profession"
               value={editForm.profession || profile.profession || ''}
               onChange={(e) => setEditForm({ ...editForm, profession: e.target.value })}
-              className="mt-1.5"
               placeholder="Your profession"
             />
           </div>
 
-          {/* Education */}
-          <div>
-            <label className="text-sm font-medium">Education</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-education" className="text-sm font-medium">Education</label>
             <Input
+              id="edit-education"
               value={editForm.education || profile.education || ''}
               onChange={(e) => setEditForm({ ...editForm, education: e.target.value })}
-              className="mt-1.5"
               placeholder="Your education"
             />
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="text-sm font-medium">Email</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-location" className="text-sm font-medium">Location</label>
             <Input
+              id="edit-location"
+              value={editForm.location || profile.location || ''}
+              onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+              placeholder="City, State"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="edit-email" className="text-sm font-medium">Email</label>
+            <Input
+              id="edit-email"
               type="email"
               value={editForm.email || profile.email || ''}
               onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-              className="mt-1.5"
             />
           </div>
 
-          {/* Phone */}
-          <div>
-            <label className="text-sm font-medium">Phone</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-phone" className="text-sm font-medium">Phone</label>
             <Input
+              id="edit-phone"
               value={editForm.phone || profile.phone || ''}
               onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-              className="mt-1.5"
             />
           </div>
 
-          {/* Website */}
-          <div>
-            <label className="text-sm font-medium">Website</label>
+          <div className="space-y-2">
+            <label htmlFor="edit-website" className="text-sm font-medium">Website</label>
             <Input
+              id="edit-website"
               value={editForm.website || profile.website || ''}
               onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
-              className="mt-1.5"
               placeholder="https://yourwebsite.com"
             />
           </div>
