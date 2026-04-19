@@ -53,11 +53,46 @@ export async function PATCH(
       .eq("id", userId)
       .single();
 
+    const { data: linkedImams, error: linkedImamsError } = await supabase
+      .from("imams")
+      .select("id, mosque_id")
+      .eq("profile_id", userId)
+      .eq("is_active", true);
+
+    if (linkedImamsError) {
+      return NextResponse.json({ error: linkedImamsError.message }, { status: 500 });
+    }
+
+    const imamIds = (linkedImams ?? []).map((row) => String(row.id));
+    let appointmentMosqueIds: string[] = [];
+
+    if (imamIds.length > 0) {
+      const { data: appointments, error: appointmentsError } = await supabase
+        .from("imam_appointments")
+        .select("mosque_id")
+        .in("imam_id", imamIds)
+        .eq("is_active", true);
+
+      if (appointmentsError && appointmentsError.code !== "42P01") {
+        return NextResponse.json({ error: appointmentsError.message }, { status: 500 });
+      }
+
+      appointmentMosqueIds = (appointments ?? [])
+        .map((row) => (typeof row.mosque_id === "string" ? row.mosque_id : null))
+        .filter((value): value is string => Boolean(value));
+    }
+
     if (
       !canManageMosque({
         role,
         targetMosqueId: id,
         userMosqueId: profile?.mosque_id ?? null,
+        userMosqueIds: [
+          ...appointmentMosqueIds,
+          ...(linkedImams ?? [])
+            .map((row) => (typeof row.mosque_id === "string" ? row.mosque_id : null))
+            .filter((value): value is string => Boolean(value)),
+        ],
       })
     ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

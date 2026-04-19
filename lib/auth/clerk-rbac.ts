@@ -36,15 +36,21 @@ export function canManageMosque(args: {
   role: AppRole;
   targetMosqueId: string;
   userMosqueId: string | null;
+  userMosqueIds?: string[] | null;
 }): boolean {
-  const { role, targetMosqueId, userMosqueId } = args;
+  const { role, targetMosqueId, userMosqueId, userMosqueIds } = args;
 
   if (canManageAllMosques(role)) {
     return true;
   }
 
   if (role === "imam") {
-    return Boolean(userMosqueId && targetMosqueId === userMosqueId);
+    const scopedMosqueIds = new Set(
+      [userMosqueId, ...(userMosqueIds ?? [])].filter(
+        (value): value is string => Boolean(value)
+      )
+    );
+    return scopedMosqueIds.has(targetMosqueId);
   }
 
   return false;

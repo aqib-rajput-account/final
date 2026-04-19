@@ -247,7 +247,8 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     key: "imams",
     label: "Imams",
     singularLabel: "Imam",
-    description: "Manage imam assignments, bios, contact details, and active status.",
+    description:
+      "Manage imam profiles, biographies, contact details, and the primary mosque assignment shown across the app.",
     table: "imams",
     primaryKey: "id",
     listFields: ["name", "mosque_id", "title", "experience_years", "is_active"],
@@ -269,10 +270,11 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
       },
       {
         key: "mosque_id",
-        label: "Mosque",
+        label: "Primary Mosque",
         type: "select",
-        required: true,
         lookup: "mosques",
+        description:
+          "Optional. Choose the main mosque appointment for this imam. Additional mosque links can be managed from Imam Appointments.",
       },
       { key: "name", label: "Name", type: "text", required: true },
       { key: "title", label: "Title", type: "text" },
@@ -285,6 +287,66 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
       { key: "phone", label: "Phone", type: "tel" },
       { key: "appointed_date", label: "Appointed Date", type: "date" },
       { key: "is_active", label: "Active", type: "boolean" },
+    ],
+  },
+  imam_appointments: {
+    key: "imam_appointments",
+    label: "Imam Appointments",
+    singularLabel: "Imam Appointment",
+    description:
+      "Link imam profiles to one or more mosques, choose a primary appointment, and keep appointment history structured.",
+    table: "imam_appointments",
+    primaryKey: "id",
+    listFields: [
+      "imam_id",
+      "mosque_id",
+      "role_title",
+      "appointed_date",
+      "is_primary",
+      "is_active",
+    ],
+    searchColumns: ["role_title", "notes"],
+    searchPlaceholder: "Search appointments by role title or notes",
+    lookupKeys: ["imams", "mosques"],
+    permissions: {
+      read: ["imam", "shura", "admin", "super_admin"],
+      create: ["shura", "admin", "super_admin"],
+      update: ["shura", "admin", "super_admin"],
+      delete: ["shura", "admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "imam_id",
+        label: "Imam",
+        type: "select",
+        required: true,
+        lookup: "imams",
+      },
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      {
+        key: "role_title",
+        label: "Role Title",
+        type: "text",
+        description:
+          "Optional mosque-specific role title. Leave blank to use the imam profile title.",
+      },
+      { key: "appointed_date", label: "Appointed Date", type: "date" },
+      { key: "ended_at", label: "Ended On", type: "date" },
+      {
+        key: "is_primary",
+        label: "Primary Appointment",
+        type: "boolean",
+        description:
+          "The primary appointment is used to scope the Imam Panel and headline the imam profile.",
+      },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "notes", label: "Notes", type: "textarea" },
     ],
   },
   management_teams: {

@@ -61,6 +61,7 @@ const IMAM_MOSQUE_SCOPED_ENTITY_KEYS = new Set<AdminEntityKey>([
   "events",
   "announcements",
   "imams",
+  "imam_appointments",
   "management_teams",
   "management_team_members",
   "mosque_tasks",
@@ -152,13 +153,30 @@ function resolveRecordMosqueId(
   return typeof mosqueId === "string" ? mosqueId : null;
 }
 
-function assertRecordWithinSessionScope(input: {
+async function assertRecordWithinSessionScope(input: {
+  supabase: SupabaseServerClient;
   definition: AdminEntityDefinition;
   session: AdminSession;
   record: Record<string, unknown>;
-}): string | null {
+}): Promise<string | null> {
   if (input.session.role !== "imam") {
     return resolveRecordMosqueId(input.definition, input.record);
+  }
+
+  if (input.definition.key === "imams") {
+    const mosqueId = assertImamHasMosque(input.session);
+    const imamId = normalizeIdentifier(input.record.id);
+
+    if (!imamId) {
+      throw new AdminAuthorizationError("Forbidden", 403);
+    }
+
+    const scopedImamIds = await loadImamIdsForMosque(input.supabase, mosqueId);
+    if (!scopedImamIds.includes(imamId)) {
+      throw new AdminAuthorizationError("Forbidden", 403);
+    }
+
+    return mosqueId;
   }
 
   const scopeColumn = getImamScopeColumn(input.definition);
@@ -322,6 +340,186 @@ function normalizeIdentifier(value: unknown): string | null {
   return nextValue.length > 0 ? nextValue : null;
 }
 
+async function loadImamIdsForMosque(
+  supabase: SupabaseServerClient,
+  mosqueId: string
+): Promise<string[]> {
+  const imamIds = new Set<string>();
+
+  const { data: directImams, error: directImamsError } = await supabase
+    .from("imams")
+    .select("id")
+    .eq("mosque_id", mosqueId);
+
+  if (directImamsError) {
+    throw new AdminServiceError(directImamsError.message, 500);
+  }
+
+  for (const row of directImams ?? []) {
+    imamIds.add(String(row.id));
+  }
+
+  const { data: appointmentRows, error: appointmentsError } = await supabase
+    .from("imam_appointments")
+    .select("imam_id")
+    .eq("mosque_id", mosqueId);
+
+  if (appointmentsError) {
+    if (isMissingRelationError(appointmentsError)) {
+      return Array.from(imamIds);
+    }
+
+    throw new AdminServiceError(appointmentsError.message, 500);
+  }
+
+  for (const row of appointmentRows ?? []) {
+    const imamId = normalizeIdentifier(row.imam_id);
+    if (imamId) {
+      imamIds.add(imamId);
+    }
+  }
+
+  return Array.from(imamIds);
+}
+
+async function loadImamIdsForProfile(
+  supabase: SupabaseServerClient,
+  profileId: string
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("imams")
+    .select("id")
+    .eq("profile_id", profileId)
+    .eq("is_active", true);
+
+  if (error) {
+    throw new AdminServiceError(error.message, 500);
+  }
+
+  return (data ?? []).map((row) => String(row.id));
+}
+
+async function loadPrimaryImamAppointment(
+  supabase: SupabaseServerClient,
+  imamId: string
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase
+    .from("imam_appointments")
+    .select("id, imam_id, mosque_id, appointed_date, is_primary, is_active, updated_at")
+    .eq("imam_id", imamId)
+    .order("is_active", { ascending: false })
+    .order("is_primary", { ascending: false })
+    .order("appointed_date", { ascending: false, nullsFirst: false })
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingRelationError(error)) {
+      return null;
+    }
+
+    throw new AdminServiceError(error.message, 500);
+  }
+
+  return (data as Record<string, unknown> | null) ?? null;
+}
+
+async function syncImamRecordPrimaryAssignment(
+  supabase: SupabaseServerClient,
+  imamId: string
+): Promise<void> {
+  const primaryAppointment = await loadPrimaryImamAppointment(supabase, imamId);
+  const primaryMosqueId = normalizeIdentifier(primaryAppointment?.mosque_id);
+  const appointedDate =
+    typeof primaryAppointment?.appointed_date === "string"
+      ? primaryAppointment.appointed_date
+      : null;
+
+  const { error } = await supabase
+    .from("imams")
+    .update({
+      mosque_id: primaryMosqueId,
+      appointed_date: appointedDate,
+    })
+    .eq("id", imamId);
+
+  if (error) {
+    throw new AdminServiceError(error.message, 500);
+  }
+}
+
+async function syncImamAppointmentFromImamRecord(input: {
+  supabase: SupabaseServerClient;
+  imamRecord: Record<string, unknown>;
+  session: AdminSession;
+}): Promise<void> {
+  const imamId = normalizeIdentifier(input.imamRecord.id);
+  if (!imamId) {
+    return;
+  }
+
+  const mosqueId = normalizeIdentifier(input.imamRecord.mosque_id);
+
+  if (!mosqueId) {
+    const { error } = await input.supabase
+      .from("imam_appointments")
+      .update({
+        is_primary: false,
+        updated_by: input.session.userId,
+      })
+      .eq("imam_id", imamId);
+
+    if (error && !isMissingRelationError(error)) {
+      throw new AdminServiceError(error.message, 500);
+    }
+
+    return;
+  }
+
+  const { error: clearPrimaryError } = await input.supabase
+    .from("imam_appointments")
+    .update({
+      is_primary: false,
+      updated_by: input.session.userId,
+    })
+    .eq("imam_id", imamId)
+    .neq("mosque_id", mosqueId);
+
+  if (clearPrimaryError && !isMissingRelationError(clearPrimaryError)) {
+    throw new AdminServiceError(clearPrimaryError.message, 500);
+  }
+
+  const appointmentPayload = {
+    imam_id: imamId,
+    mosque_id: mosqueId,
+    role_title:
+      typeof input.imamRecord.title === "string" ? input.imamRecord.title : null,
+    appointed_date:
+      typeof input.imamRecord.appointed_date === "string"
+        ? input.imamRecord.appointed_date
+        : null,
+    is_primary: true,
+    is_active: Boolean(input.imamRecord.is_active),
+    updated_by: input.session.userId,
+    created_by: input.session.userId,
+  };
+
+  const { error: upsertError } = await input.supabase
+    .from("imam_appointments")
+    .upsert(appointmentPayload, {
+      onConflict: "imam_id,mosque_id",
+    });
+
+  if (upsertError) {
+    if (isMissingRelationError(upsertError)) {
+      return;
+    }
+
+    throw new AdminServiceError(upsertError.message, 500);
+  }
+}
+
 async function loadManagementTeamRecord(
   supabase: SupabaseServerClient,
   teamId: string
@@ -372,7 +570,16 @@ async function assertProfileBelongsToMosque(input: {
     return;
   }
 
-  const { data: imamAssignment, error: imamError } = await input.supabase
+  const imamIds = await loadImamIdsForProfile(input.supabase, input.profileId);
+
+  if (!imamIds.length) {
+    throw new AdminServiceError(
+      `${input.label} must belong to the same mosque`,
+      400
+    );
+  }
+
+  const { data: directImamAssignment, error: directImamError } = await input.supabase
     .from("imams")
     .select("id")
     .eq("profile_id", input.profileId)
@@ -381,11 +588,35 @@ async function assertProfileBelongsToMosque(input: {
     .limit(1)
     .maybeSingle();
 
-  if (imamError) {
-    throw new AdminServiceError(imamError.message, 500);
+  if (directImamError) {
+    throw new AdminServiceError(directImamError.message, 500);
   }
 
-  if (!imamAssignment) {
+  if (directImamAssignment) {
+    return;
+  }
+
+  const { data: imamAppointment, error: imamAppointmentError } = await input.supabase
+    .from("imam_appointments")
+    .select("id")
+    .in("imam_id", imamIds)
+    .eq("mosque_id", input.mosqueId)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (imamAppointmentError) {
+    if (isMissingRelationError(imamAppointmentError)) {
+      throw new AdminServiceError(
+        `${input.label} must belong to the same mosque`,
+        400
+      );
+    }
+
+    throw new AdminServiceError(imamAppointmentError.message, 500);
+  }
+
+  if (!imamAppointment) {
     throw new AdminServiceError(
       `${input.label} must belong to the same mosque`,
       400
@@ -404,20 +635,27 @@ async function applyRelationalIntegrityToMutationPayload(input: {
 
   switch (input.definition.key) {
     case "imams": {
-      const mosqueId =
-        normalizeIdentifier(nextPayload.mosque_id) ??
-        normalizeIdentifier(input.existingRecord?.mosque_id) ??
-        getScopedMosqueIdForSession(input.definition, input.session) ??
-        (input.session.role === "imam" ? assertImamHasMosque(input.session) : null);
-
-      if (!mosqueId) {
-        throw new AdminServiceError("An imam appointment must belong to a mosque", 400);
-      }
-
+      const hasExplicitMosqueSelection = Object.prototype.hasOwnProperty.call(
+        nextPayload,
+        "mosque_id"
+      );
+      const mosqueId = hasExplicitMosqueSelection
+        ? normalizeIdentifier(nextPayload.mosque_id) ??
+          (input.session.role === "imam" ? assertImamHasMosque(input.session) : null)
+        : normalizeIdentifier(input.existingRecord?.mosque_id) ??
+          getScopedMosqueIdForSession(input.definition, input.session) ??
+          (input.session.role === "imam" ? assertImamHasMosque(input.session) : null);
       nextPayload.mosque_id = mosqueId;
 
+      if (input.session.role === "imam" && mosqueId !== assertImamHasMosque(input.session)) {
+        throw new AdminAuthorizationError(
+          "You can only manage imam records for your appointed mosque",
+          403
+        );
+      }
+
       const profileId = normalizeIdentifier(nextPayload.profile_id);
-      if (profileId) {
+      if (profileId && mosqueId) {
         await assertProfileBelongsToMosque({
           supabase: input.supabase,
           profileId,
@@ -426,6 +664,35 @@ async function applyRelationalIntegrityToMutationPayload(input: {
           enforceMosqueMatch: input.session.role === "imam",
         });
       }
+
+      return nextPayload;
+    }
+    case "imam_appointments": {
+      const imamId =
+        normalizeIdentifier(nextPayload.imam_id) ??
+        normalizeIdentifier(input.existingRecord?.imam_id);
+      const mosqueId =
+        normalizeIdentifier(nextPayload.mosque_id) ??
+        normalizeIdentifier(input.existingRecord?.mosque_id) ??
+        getScopedMosqueIdForSession(input.definition, input.session);
+
+      if (!imamId) {
+        throw new AdminServiceError("An imam appointment must reference an imam", 400);
+      }
+
+      if (!mosqueId) {
+        throw new AdminServiceError("An imam appointment must reference a mosque", 400);
+      }
+
+      if (input.session.role === "imam" && mosqueId !== assertImamHasMosque(input.session)) {
+        throw new AdminAuthorizationError(
+          "You can only manage appointments for your appointed mosque",
+          403
+        );
+      }
+
+      nextPayload.imam_id = imamId;
+      nextPayload.mosque_id = mosqueId;
 
       return nextPayload;
     }
@@ -707,6 +974,13 @@ function applyEntityDefaults(
     }
   }
 
+  if (definition.key === "imam_appointments") {
+    nextPayload.updated_by = session.userId;
+    if (mode === "create") {
+      nextPayload.created_by = session.userId;
+    }
+  }
+
   if (definition.key === "mosque_tasks") {
     nextPayload.updated_by = session.userId;
     if (mode === "create") {
@@ -787,32 +1061,44 @@ async function loadProfileLookup(
   }
 
   if (session?.mosqueId) {
-    const { data: imamProfiles } = await supabase
-      .from("imams")
-      .select("profile_id")
-      .eq("mosque_id", session.mosqueId)
-      .eq("is_active", true)
-      .not("profile_id", "is", null);
+    const imamIds = await loadImamIdsForMosque(supabase, session.mosqueId);
 
-    const missingProfileIds = (imamProfiles ?? [])
-      .map((row) => normalizeIdentifier(row.profile_id))
-      .filter((value): value is string => Boolean(value))
-      .filter((value) => !options.has(value));
+    if (imamIds.length > 0) {
+      const { data: imamProfiles, error: imamProfilesError } = await supabase
+        .from("imams")
+        .select("profile_id")
+        .in("id", imamIds)
+        .eq("is_active", true)
+        .not("profile_id", "is", null);
 
-    if (missingProfileIds.length > 0) {
-      const { data: missingProfiles } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .in("id", missingProfileIds);
+      if (imamProfilesError) {
+        throw new AdminServiceError(imamProfilesError.message, 500);
+      }
 
-      for (const row of missingProfiles ?? []) {
-        options.set(String(row.id), {
-          value: String(row.id),
-          label:
-            row.full_name ||
-            row.email ||
-            `${String(row.role ?? "member")} ${String(row.id).slice(0, 8)}`,
-        });
+      const missingProfileIds = (imamProfiles ?? [])
+        .map((row) => normalizeIdentifier(row.profile_id))
+        .filter((value): value is string => Boolean(value))
+        .filter((value) => !options.has(value));
+
+      if (missingProfileIds.length > 0) {
+        const { data: missingProfiles, error: missingProfilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, role")
+          .in("id", missingProfileIds);
+
+        if (missingProfilesError) {
+          throw new AdminServiceError(missingProfilesError.message, 500);
+        }
+
+        for (const row of missingProfiles ?? []) {
+          options.set(String(row.id), {
+            value: String(row.id),
+            label:
+              row.full_name ||
+              row.email ||
+              `${String(row.role ?? "member")} ${String(row.id).slice(0, 8)}`,
+          });
+        }
       }
     }
   }
@@ -820,6 +1106,41 @@ async function loadProfileLookup(
   return Array.from(options.values()).sort((left, right) =>
     left.label.localeCompare(right.label)
   );
+}
+
+async function loadImamLookup(
+  supabase: SupabaseServerClient,
+  session?: AdminSession
+): Promise<AdminLookupOption[]> {
+  let scopedImamIds: string[] | null = null;
+
+  if (session?.role === "imam" && session.mosqueId) {
+    scopedImamIds = await loadImamIdsForMosque(supabase, session.mosqueId);
+  }
+
+  if (session?.role === "imam" && (!scopedImamIds || scopedImamIds.length === 0)) {
+    return [];
+  }
+
+  let query = supabase
+    .from("imams")
+    .select("id, name, title")
+    .order("name", { ascending: true });
+
+  if (scopedImamIds) {
+    query = query.in("id", scopedImamIds);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    value: String(row.id),
+    label: row.title ? `${String(row.name)} (${String(row.title)})` : String(row.name),
+  }));
 }
 
 async function loadManagementTeamLookup(
@@ -873,6 +1194,10 @@ async function loadLookups(
         return [lookupKey, await loadProfileLookup(supabase, session)] as const;
       }
 
+      if (lookupKey === "imams") {
+        return [lookupKey, await loadImamLookup(supabase, session)] as const;
+      }
+
       if (lookupKey === "management_teams") {
         return [lookupKey, await loadManagementTeamLookup(supabase, session)] as const;
       }
@@ -891,6 +1216,15 @@ async function countEntityRecords(
 ): Promise<number | null> {
   if (definition.singleton) {
     return 1;
+  }
+
+  if (session.role === "imam" && definition.key === "imams") {
+    if (!session.mosqueId) {
+      return 0;
+    }
+
+    const imamIds = await loadImamIdsForMosque(supabase, session.mosqueId);
+    return imamIds.length;
   }
 
   const query = applySessionScopeToQuery(
@@ -1038,6 +1372,12 @@ export async function listAdminEntityRecords(input: {
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const offset = Math.max(input.offset ?? 0, 0);
   const search = sanitizeSearchTerm(input.search ?? null);
+  const scopedImamIds =
+    input.session.role === "imam" && definition.key === "imams"
+      ? input.session.mosqueId
+        ? await loadImamIdsForMosque(supabase, input.session.mosqueId)
+        : []
+      : null;
 
   let query = supabase
     .from(definition.table)
@@ -1047,7 +1387,13 @@ export async function listAdminEntityRecords(input: {
       ascending: false,
     });
 
-  query = applySessionScopeToQuery(query as any, definition, input.session) as typeof query;
+  if (!scopedImamIds) {
+    query = applySessionScopeToQuery(query as any, definition, input.session) as typeof query;
+  }
+
+  if (scopedImamIds) {
+    query = query.in("id", scopedImamIds.length > 0 ? scopedImamIds : [EMPTY_IMAM_SCOPE_UUID]);
+  }
 
   if (search && definition.searchColumns.length > 0) {
     query = query.or(
@@ -1123,7 +1469,8 @@ export async function getAdminEntityRecord(input: {
 
   const data = await loadExistingEntityRecord(supabase, definition, input.id);
 
-  assertRecordWithinSessionScope({
+  await assertRecordWithinSessionScope({
+    supabase,
     definition,
     session: input.session,
     record: data,
@@ -1163,6 +1510,49 @@ async function publishAdminMutation(params: {
       mosqueId: params.mosqueId ?? null,
     },
   });
+}
+
+async function reconcileRelatedImamRecords(input: {
+  supabase: SupabaseServerClient;
+  session: AdminSession;
+  definition: AdminEntityDefinition;
+  item: Record<string, unknown>;
+}): Promise<void> {
+  if (input.definition.key === "imams") {
+    await syncImamAppointmentFromImamRecord({
+      supabase: input.supabase,
+      imamRecord: input.item,
+      session: input.session,
+    });
+    return;
+  }
+
+  if (input.definition.key !== "imam_appointments") {
+    return;
+  }
+
+  const imamId = normalizeIdentifier(input.item.imam_id);
+  if (!imamId) {
+    return;
+  }
+
+  if (input.item.is_primary === true) {
+    const appointmentId = normalizeIdentifier(input.item.id);
+    const { error } = await input.supabase
+      .from("imam_appointments")
+      .update({
+        is_primary: false,
+        updated_by: input.session.userId,
+      })
+      .eq("imam_id", imamId)
+      .neq("id", appointmentId ?? "");
+
+    if (error && !isMissingRelationError(error)) {
+      throw new AdminServiceError(error.message, 500);
+    }
+  }
+
+  await syncImamRecordPrimaryAssignment(input.supabase, imamId);
 }
 
 export async function createAdminEntityRecord(input: {
@@ -1266,6 +1656,15 @@ export async function createAdminEntityRecord(input: {
 
   if (error) {
     throw new AdminServiceError(error.message, 500);
+  }
+
+  if (definition.key === "imams" || definition.key === "imam_appointments") {
+    await reconcileRelatedImamRecords({
+      supabase,
+      session: input.session,
+      definition,
+      item: data as Record<string, unknown>,
+    });
   }
 
   const entityId = String(
@@ -1381,7 +1780,8 @@ export async function updateAdminEntityRecord(input: {
   );
 
   const existingRecord = await loadExistingEntityRecord(supabase, definition, input.id);
-  assertRecordWithinSessionScope({
+  await assertRecordWithinSessionScope({
+    supabase,
     definition,
     session: input.session,
     record: existingRecord,
@@ -1417,6 +1817,15 @@ export async function updateAdminEntityRecord(input: {
 
   if (!data) {
     throw new AdminServiceError("Record not found", 404);
+  }
+
+  if (definition.key === "imam_appointments") {
+    await reconcileRelatedImamRecords({
+      supabase,
+      session: input.session,
+      definition,
+      item: data as Record<string, unknown>,
+    });
   }
 
   const mosqueId = resolveRecordMosqueId(
@@ -1474,7 +1883,8 @@ export async function deleteAdminEntityRecord(input: {
   }
 
   const existingRecord = await loadExistingEntityRecord(supabase, definition, input.id);
-  const mosqueId = assertRecordWithinSessionScope({
+  const mosqueId = await assertRecordWithinSessionScope({
+    supabase,
     definition,
     session: input.session,
     record: existingRecord,
@@ -1494,6 +1904,13 @@ export async function deleteAdminEntityRecord(input: {
   if (!data) {
     throw new AdminServiceError("Record not found", 404);
   }
+
+  await reconcileRelatedImamRecords({
+    supabase,
+    session: input.session,
+    definition,
+    item: data as Record<string, unknown>,
+  });
 
   await publishAdminMutation({
     request: input.request,

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS public.admin_settings (
     "events": { "read": true, "create": true, "update": true, "delete": true },
     "announcements": { "read": true, "create": true, "update": true, "delete": true },
     "imams": { "read": true, "create": true, "update": true, "delete": true },
+    "imam_appointments": { "read": true, "create": true, "update": true, "delete": true },
     "management_teams": { "read": true, "create": true, "update": true, "delete": true },
     "management_team_members": { "read": true, "create": true, "update": true, "delete": true },
     "mosque_tasks": { "read": true, "create": true, "update": true, "delete": true },

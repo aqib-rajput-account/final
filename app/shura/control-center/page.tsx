@@ -11,6 +11,7 @@ export default function ShuraControlCenterPage() {
         "events",
         "announcements",
         "imams",
+        "imam_appointments",
         "management_teams",
         "management_team_members",
         "mosque_tasks",

@@ -58,16 +58,45 @@ export async function resolveAdminSession(
   let mosqueId = role === "imam" ? null : data.mosque_id ?? null;
 
   if (role === "imam") {
-    const { data: imamAppointment } = await supabase
+    const { data: linkedImams, error: linkedImamsError } = await supabase
       .from("imams")
-      .select("mosque_id")
+      .select("id, mosque_id, appointed_date")
       .eq("profile_id", userId)
       .eq("is_active", true)
       .order("appointed_date", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10);
 
-    mosqueId = imamAppointment?.mosque_id ?? null;
+    if (linkedImamsError) {
+      return null;
+    }
+
+    const imamIds = (linkedImams ?? []).map((row) => String(row.id));
+    let primaryAppointmentMosqueId: string | null = null;
+
+    if (imamIds.length > 0) {
+      const { data: imamAppointment, error: imamAppointmentError } = await supabase
+        .from("imam_appointments")
+        .select("mosque_id")
+        .in("imam_id", imamIds)
+        .eq("is_active", true)
+        .order("is_primary", { ascending: false })
+        .order("appointed_date", { ascending: false, nullsFirst: false })
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (imamAppointmentError && imamAppointmentError.code !== "42P01") {
+        return null;
+      }
+
+      primaryAppointmentMosqueId = imamAppointment?.mosque_id ?? null;
+    }
+
+    mosqueId =
+      primaryAppointmentMosqueId ??
+      linkedImams?.find((entry) => entry.mosque_id)?.mosque_id ??
+      data.mosque_id ??
+      null;
   }
 
   return {

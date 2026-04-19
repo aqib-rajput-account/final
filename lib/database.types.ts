@@ -51,7 +51,7 @@ export interface Mosque {
 export interface Imam {
   id: string;
   profile_id: string | null;
-  mosque_id: string;
+  mosque_id: string | null;
   name: string;
   title: string | null;
   specializations: string[] | null;
@@ -196,6 +196,22 @@ export interface ManagementTeam {
   description: string | null;
   lead_profile_id: string | null;
   is_active: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImamAppointment {
+  id: string;
+  imam_id: string;
+  mosque_id: string;
+  role_title: string | null;
+  appointed_date: string | null;
+  ended_at: string | null;
+  is_primary: boolean;
+  is_active: boolean;
+  notes: string | null;
   created_by: string | null;
   updated_by: string | null;
   created_at: string;

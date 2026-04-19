@@ -4,8 +4,8 @@ export default function ShuraImamsPage() {
   return (
     <AdminControlCenter
       title="Imam Appointments"
-      description="Oversee imam assignments, status, appointment history, and leadership coverage across all mosques."
-      allowedEntityKeys={["imams"]}
+      description="Oversee imam profiles, mosque appointments, assignment coverage, and leadership continuity across all mosques."
+      allowedEntityKeys={["imams", "imam_appointments"]}
       initialEntityKey="imams"
     />
   );

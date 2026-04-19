@@ -6,6 +6,7 @@ import type {
   Donation,
   Event,
   Imam,
+  ImamAppointment,
   Mosque,
   Post,
   PrayerTime,
@@ -56,6 +57,10 @@ interface ProfileLookupRow {
   email: string | null;
   phone: string | null;
   profession: string | null;
+}
+
+interface ImamAppointmentRow extends ImamAppointment {
+  imam: Imam | Imam[] | null;
 }
 
 export interface PublicManagementTeamMember extends ManagementTeamMemberRow {
@@ -329,7 +334,8 @@ export const getPublicMosquePageData = cache(async (id: string) => {
   const today = nowIso.slice(0, 10);
 
   const [
-    imamsResult,
+    imamAppointmentsResult,
+    directImamsResult,
     eventsResult,
     announcementsResult,
     donationsResult,
@@ -340,6 +346,13 @@ export const getPublicMosquePageData = cache(async (id: string) => {
     teamsResult,
     teamMembersResult,
   ] = await Promise.all([
+    supabase
+      .from("imam_appointments")
+      .select("id, imam_id, mosque_id, role_title, appointed_date, ended_at, is_primary, is_active, notes, created_by, updated_by, created_at, updated_at, imam:imams(*)")
+      .eq("mosque_id", id)
+      .order("is_primary", { ascending: false })
+      .order("is_active", { ascending: false })
+      .order("appointed_date", { ascending: true }),
     supabase
       .from("imams")
       .select("*")
@@ -410,7 +423,8 @@ export const getPublicMosquePageData = cache(async (id: string) => {
       .order("joined_at", { ascending: true }),
   ]);
 
-  logQueryError("mosque_imams", imamsResult.error);
+  logQueryError("mosque_imam_appointments", imamAppointmentsResult.error);
+  logQueryError("mosque_imams_legacy", directImamsResult.error);
   logQueryError("mosque_events", eventsResult.error);
   logQueryError("mosque_announcements", announcementsResult.error);
   logQueryError("mosque_donations", donationsResult.error);
@@ -421,7 +435,43 @@ export const getPublicMosquePageData = cache(async (id: string) => {
   logQueryError("mosque_management_teams", teamsResult.error);
   logQueryError("mosque_management_team_members", teamMembersResult.error);
 
-  const imams = imamsResult.data ?? [];
+  const imamsMap = new Map<string, Imam>();
+
+  if (!isMissingRelationError(directImamsResult.error)) {
+    for (const imam of (directImamsResult.data ?? []) as Imam[]) {
+      imamsMap.set(imam.id, imam);
+    }
+  }
+
+  if (!isMissingRelationError(imamAppointmentsResult.error)) {
+    for (const appointment of (imamAppointmentsResult.data ?? []) as ImamAppointmentRow[]) {
+      const imamRecord = Array.isArray(appointment.imam)
+        ? appointment.imam[0] ?? null
+        : appointment.imam;
+
+      if (!imamRecord) {
+        continue;
+      }
+
+      imamsMap.set(imamRecord.id, {
+        ...imamRecord,
+        mosque_id: appointment.mosque_id,
+        title: appointment.role_title ?? imamRecord.title,
+        appointed_date: appointment.appointed_date ?? imamRecord.appointed_date,
+        is_active: appointment.is_active && imamRecord.is_active,
+      });
+    }
+  }
+
+  const imams = Array.from(imamsMap.values()).sort((left, right) => {
+    if (left.is_active !== right.is_active) {
+      return left.is_active ? -1 : 1;
+    }
+
+    const leftDate = left.appointed_date ? new Date(left.appointed_date).getTime() : 0;
+    const rightDate = right.appointed_date ? new Date(right.appointed_date).getTime() : 0;
+    return leftDate - rightDate;
+  });
   const events = eventsResult.data ?? [];
   const announcements = (announcementsResult.data ?? []).filter(
     (announcement) => !announcement.expires_at || announcement.expires_at > nowIso

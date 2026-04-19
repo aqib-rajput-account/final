@@ -63,6 +63,7 @@ export const DEFAULT_SHURA_PERMISSIONS: ShuraPermissionMap = {
   events: managedPermission(),
   announcements: managedPermission(),
   imams: managedPermission(),
+  imam_appointments: managedPermission(),
   management_teams: managedPermission(),
   management_team_members: managedPermission(),
   mosque_tasks: managedPermission(),
