@@ -205,22 +205,25 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-6">
             <Tabs defaultValue="about" className="w-full">
-              <div className="border-b border-border/50">
-                <TabsList className="h-auto gap-1 bg-transparent p-0">
-                  <TabsTrigger value="about" className="rounded-none border-b-2 border-transparent px-4 py-3 font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent">
+              <div className="mb-6 rounded-lg bg-muted/30 p-1">
+                <TabsList className="grid h-auto w-full grid-cols-6 gap-1 bg-transparent p-0">
+                  <TabsTrigger value="about" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
                     About
                   </TabsTrigger>
-                  <TabsTrigger value="imams" className="rounded-none border-b-2 border-transparent px-4 py-3 font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent">
+                  <TabsTrigger value="imams" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
                     Imams ({imams.length})
                   </TabsTrigger>
-                  <TabsTrigger value="management" className="rounded-none border-b-2 border-transparent px-4 py-3 font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent">
+                  <TabsTrigger value="management" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
                     Management
                   </TabsTrigger>
-                  <TabsTrigger value="events" className="rounded-none border-b-2 border-transparent px-4 py-3 font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent">
+                  <TabsTrigger value="events" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
                     Events ({events.length})
                   </TabsTrigger>
-                  <TabsTrigger value="library" className="rounded-none border-b-2 border-transparent px-4 py-3 font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent">
-                    Library
+                  <TabsTrigger value="announcements" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Announcements
+                  </TabsTrigger>
+                  <TabsTrigger value="donations" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Donations
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -346,52 +349,52 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                   <EmptyState title="No imam profiles yet" description="The mosque has not published imam profiles yet." />
                 ) : (
                   <div className="grid gap-6 md:grid-cols-2">
-                        {imams.map((imam) => (
-                          <Card key={imam.id}>
-                            <CardContent className="p-6">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                    {imam.title || "Imam"}
-                                  </p>
-                                  <h3 className="mt-2 text-lg font-semibold">{imam.name}</h3>
-                                  <p className="mt-3 line-clamp-4 text-sm leading-relaxed text-muted-foreground">
-                                    {imam.bio || "Biography coming soon."}
-                                  </p>
-                                </div>
-                                {imam.is_active ? (
-                                  <Badge className="rounded-full border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
-                                    Active
-                                  </Badge>
-                                ) : null}
-                              </div>
+                    {imams.map((imam) => (
+                      <Card key={imam.id} className="overflow-hidden">
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-3">
+                              <p className="text-xs font-medium uppercase tracking-wider text-primary">
+                                {imam.title || "Imam"}
+                              </p>
+                              <h3 className="text-xl font-bold">{imam.name}</h3>
+                              <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                                {imam.bio || "Biography coming soon."}
+                              </p>
+                            </div>
+                            {imam.is_active ? (
+                              <Badge className="rounded-full border-0 bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
+                                Active
+                              </Badge>
+                            ) : null}
+                          </div>
 
-                              <div className="mt-5 flex flex-wrap gap-2">
-                                {(imam.languages ?? []).slice(0, 3).map((language) => (
-                                  <Badge key={language} variant="outline" className="rounded-full px-3 py-1">
-                                    {language}
-                                  </Badge>
-                                ))}
-                                {(imam.specializations ?? []).slice(0, 2).map((specialization) => (
-                                  <Badge key={specialization} variant="secondary" className="rounded-full px-3 py-1">
-                                    {specialization}
-                                  </Badge>
-                                ))}
-                              </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {(imam.languages ?? []).slice(0, 3).map((language) => (
+                              <Badge key={language} variant="outline" className="rounded-full">
+                                {language}
+                              </Badge>
+                            ))}
+                            {(imam.specializations ?? []).slice(0, 2).map((specialization) => (
+                              <Badge key={specialization} variant="secondary" className="rounded-full">
+                                {specialization}
+                              </Badge>
+                            ))}
+                          </div>
 
-                              <div className="mt-6 flex flex-wrap gap-3">
-                                <Button asChild className="rounded-xl">
-                                  <Link href={`/mosques/${mosque.id}/imam/${imam.id}`}>View Profile</Link>
-                                </Button>
-                                {imam.email ? (
-                                  <Button variant="outline" asChild className="rounded-xl">
-                                    <a href={`mailto:${imam.email}`}>Email Imam</a>
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                          <div className="mt-6 flex flex-wrap gap-3">
+                            <Button asChild className="rounded-lg">
+                              <Link href={`/mosques/${mosque.id}/imam/${imam.id}`}>View Profile</Link>
+                            </Button>
+                            {imam.email ? (
+                              <Button variant="outline" asChild className="rounded-lg">
+                                <a href={`mailto:${imam.email}`}>Email Imam</a>
+                              </Button>
+                            ) : null}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                       </div>
                     )}
               </TabsContent>
@@ -506,28 +509,96 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                 </div>
               </TabsContent>
 
-              <TabsContent value="community" className="mt-6 space-y-4">
-                {recentPosts.length === 0 ? (
+              <TabsContent value="announcements" className="mt-6 space-y-4">
+                {announcements.length === 0 ? (
                   <EmptyState
-                    title="No community posts yet"
-                    description="When the mosque posts updates to the community feed, they will show up here."
+                    title="No announcements posted"
+                    description="The latest notices and updates from the mosque will show here."
                   />
                 ) : (
-                  recentPosts.map((post) => (
-                    <Card key={post.id}>
-                      <CardContent className="space-y-4 p-5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">
-                              {post.author?.full_name || "Mosque community"}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{formatDate(post.created_at)}</p>
+                  announcements.map((announcement) => (
+                    <Card key={announcement.id}>
+                      <CardContent className="p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "rounded-full px-3 py-1 capitalize",
+                                  announcementPriorityTone[announcement.priority] ?? announcementPriorityTone.normal
+                                )}
+                              >
+                                {announcement.priority}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(announcement.published_at)}
+                              </span>
+                            </div>
+                            <h3 className="text-base font-semibold">{announcement.title}</h3>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{announcement.content}</p>
                           </div>
-                          <Badge variant="outline" className="rounded-full capitalize">
-                            {post.category || post.post_type || "update"}
-                          </Badge>
                         </div>
-                        <p className="text-sm leading-relaxed text-muted-foreground">{post.content}</p>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </TabsContent>
+
+              <TabsContent value="donations" className="mt-6 space-y-6">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Total Raised
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight text-primary">
+                        {formatCurrency(totalRaised)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Donations
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight">
+                        {donations.length}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Latest Gift
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight">
+                        {donations[0] ? formatCurrency(donations[0].amount) : formatCurrency(0)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {donations.length === 0 ? (
+                  <EmptyState
+                    title="No completed donations yet"
+                    description="Donation activity will appear here once it is recorded by the mosque."
+                  />
+                ) : (
+                  donations.map((donation) => (
+                    <Card key={donation.id}>
+                      <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-foreground capitalize">
+                            {formatLabel(donation.donation_type || "general")}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatDate(donation.created_at)}{donation.is_anonymous ? " • Anonymous donor" : ""}
+                          </p>
+                        </div>
+                        <Badge className="w-fit rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">
+                          {formatCurrency(donation.amount)}
+                        </Badge>
                       </CardContent>
                     </Card>
                   ))
@@ -541,7 +612,7 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
           </div>
 
           <div className="space-y-6">
-            <Card className="lg:sticky lg:top-[88px]">
+            <Card className="lg:sticky lg:top-[100px]">
               <CardHeader className="border-b border-border/50">
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
