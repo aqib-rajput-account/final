@@ -1099,27 +1099,27 @@ export function AdminControlCenter({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl">
+            <DialogTitle>
               {editingItemId ? "Edit" : "Create"} {selectedEntity?.singularLabel}
             </DialogTitle>
             {selectedEntity?.description && (
               <DialogDescription>{selectedEntity.description}</DialogDescription>
             )}
           </DialogHeader>
-          <div className="flex flex-col gap-5 py-4">
+          <div className="space-y-4 py-4">
             {selectedEntity?.formFields.map((field) => (
-              <div key={field.key} className="flex flex-col gap-2.5 w-full">
-                <Label htmlFor={field.key} className="text-xs font-semibold">{field.label}</Label>
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={field.key}>{field.label}</Label>
                 {renderField(field)}
                 {field.description && (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
+                  <p className="text-xs text-muted-foreground">
                     {field.description}
                   </p>
                 )}
               </div>
             ))}
           </div>
-          <DialogFooter className="flex gap-2 pt-2 border-t border-border/30">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setDialogOpen(false)}
@@ -1127,8 +1127,8 @@ export function AdminControlCenter({
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="gap-2">
-              {saving && <Loader2 className="size-4 animate-spin" />}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingItemId ? "Save Changes" : "Create Record"}
             </Button>
           </DialogFooter>

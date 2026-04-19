@@ -395,119 +395,109 @@ function EditProfileDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-4">
-          {/* Avatar Section */}
-          <div className="flex items-center gap-4 p-3 rounded-md border border-border/50 bg-muted/30">
+        <div className="space-y-4 py-4">
+          <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
               <AvatarImage src={editForm.avatar || profile.avatar} />
               <AvatarFallback className="bg-primary text-primary-foreground text-lg font-semibold">
                 {(editForm.name || profile.name).split(' ').map(n => n[0]).join('')}
               </AvatarFallback>
             </Avatar>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Camera className="h-4 w-4" />
+            <Button variant="outline" size="sm">
+              <Camera className="mr-2 h-4 w-4" />
               Change Photo
             </Button>
           </div>
 
-          {/* Basic Info Section */}
-          <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-name" className="text-xs font-semibold">Name</label>
-              <Input
-                id="edit-name"
-                value={editForm.name || profile.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              />
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-username" className="text-xs font-semibold">Username</label>
-              <Input
-                id="edit-username"
-                value={editForm.username || profile.username}
-                onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-              />
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-bio" className="text-xs font-semibold">Bio</label>
-              <Textarea
-                id="edit-bio"
-                value={editForm.bio || profile.bio || ''}
-                onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
-                placeholder="Tell us about yourself..."
-              />
-            </div>
+          <div className="space-y-2">
+            <label htmlFor="edit-name" className="text-sm font-medium">Name</label>
+            <Input
+              id="edit-name"
+              value={editForm.name || profile.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            />
           </div>
 
-          {/* Professional Info Section */}
-          <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-profession" className="text-xs font-semibold">Profession</label>
-              <Input
-                id="edit-profession"
-                value={editForm.profession || profile.profession || ''}
-                onChange={(e) => setEditForm({ ...editForm, profession: e.target.value })}
-                placeholder="Your profession"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-education" className="text-xs font-semibold">Education</label>
-              <Input
-                id="edit-education"
-                value={editForm.education || profile.education || ''}
-                onChange={(e) => setEditForm({ ...editForm, education: e.target.value })}
-                placeholder="Your education"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-location" className="text-xs font-semibold">Location</label>
-              <Input
-                id="edit-location"
-                value={editForm.location || profile.location || ''}
-                onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-                placeholder="City, State"
-              />
-            </div>
+          <div className="space-y-2">
+            <label htmlFor="edit-username" className="text-sm font-medium">Username</label>
+            <Input
+              id="edit-username"
+              value={editForm.username || profile.username}
+              onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+            />
           </div>
 
-          {/* Contact Info Section */}
-          <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-email" className="text-xs font-semibold">Email</label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={editForm.email || profile.email || ''}
-                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-              />
-            </div>
+          <div className="space-y-2">
+            <label htmlFor="edit-bio" className="text-sm font-medium">Bio</label>
+            <Textarea
+              id="edit-bio"
+              value={editForm.bio || profile.bio || ''}
+              onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
+              placeholder="Tell us about yourself..."
+            />
+          </div>
 
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-phone" className="text-xs font-semibold">Phone</label>
-              <Input
-                id="edit-phone"
-                value={editForm.phone || profile.phone || ''}
-                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-              />
-            </div>
+          <div className="space-y-2">
+            <label htmlFor="edit-profession" className="text-sm font-medium">Profession</label>
+            <Input
+              id="edit-profession"
+              value={editForm.profession || profile.profession || ''}
+              onChange={(e) => setEditForm({ ...editForm, profession: e.target.value })}
+              placeholder="Your profession"
+            />
+          </div>
 
-            <div className="flex flex-col gap-2.5">
-              <label htmlFor="edit-website" className="text-xs font-semibold">Website</label>
-              <Input
-                id="edit-website"
-                value={editForm.website || profile.website || ''}
-                onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
-                placeholder="https://yourwebsite.com"
-              />
-            </div>
+          <div className="space-y-2">
+            <label htmlFor="edit-education" className="text-sm font-medium">Education</label>
+            <Input
+              id="edit-education"
+              value={editForm.education || profile.education || ''}
+              onChange={(e) => setEditForm({ ...editForm, education: e.target.value })}
+              placeholder="Your education"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="edit-location" className="text-sm font-medium">Location</label>
+            <Input
+              id="edit-location"
+              value={editForm.location || profile.location || ''}
+              onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+              placeholder="City, State"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="edit-email" className="text-sm font-medium">Email</label>
+            <Input
+              id="edit-email"
+              type="email"
+              value={editForm.email || profile.email || ''}
+              onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="edit-phone" className="text-sm font-medium">Phone</label>
+            <Input
+              id="edit-phone"
+              value={editForm.phone || profile.phone || ''}
+              onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="edit-website" className="text-sm font-medium">Website</label>
+            <Input
+              id="edit-website"
+              value={editForm.website || profile.website || ''}
+              onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
+              placeholder="https://yourwebsite.com"
+            />
           </div>
         </div>
 
-        <DialogFooter className="flex gap-2 pt-2 border-t border-border/30">
+        <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

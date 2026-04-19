@@ -662,14 +662,14 @@ export function UserManagementConsole({
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-xl">Change User Role</DialogTitle>
+            <DialogTitle>Change User Role</DialogTitle>
             <DialogDescription>
               Update the role for {selectedUser?.full_name || selectedUser?.email}.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-5 py-4">
-            {/* User Info Section */}
-            <div className="flex items-center gap-3 p-3 rounded-md border border-border/50 bg-muted/30">
+          <div className="space-y-4 py-4">
+            {/* User Info */}
+            <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={selectedUser?.avatar_url || undefined} />
                 <AvatarFallback>
@@ -682,9 +682,9 @@ export function UserManagementConsole({
               </div>
             </div>
 
-            {/* Current Role Section */}
-            <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-              <label className="text-xs font-semibold">Current Role</label>
+            {/* Current Role */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Current Role</label>
               <Badge
                 variant={
                   selectedUser ? getRoleBadgeVariant(selectedUser.role) : "outline"
@@ -695,9 +695,9 @@ export function UserManagementConsole({
               </Badge>
             </div>
 
-            {/* New Role Selection */}
-            <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-              <label htmlFor="role-select" className="text-xs font-semibold">New Role</label>
+            {/* New Role */}
+            <div className="space-y-2">
+              <label htmlFor="role-select" className="text-sm font-medium">New Role</label>
               <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
                 <SelectTrigger id="role-select">
                   <SelectValue placeholder="Select a role" />
@@ -713,14 +713,14 @@ export function UserManagementConsole({
               </Select>
             </div>
 
-            {/* Warning Section */}
+            {/* Warning */}
             {newRole === "super_admin" && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-                <strong>Warning:</strong> Super Admin has full access to all features and can manage other admins.
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                <strong>Warning:</strong> Super Admin has full access to all features.
               </div>
             )}
           </div>
-          <DialogFooter className="flex gap-2 pt-2 border-t border-border/30">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setIsDialogOpen(false)}
@@ -733,9 +733,8 @@ export function UserManagementConsole({
               disabled={
                 isUpdatingRole || !newRole || newRole === selectedUser?.role
               }
-              className="gap-2"
             >
-              {isUpdatingRole && <Spinner className="h-4 w-4" />}
+              {isUpdatingRole && <Spinner className="mr-2 h-4 w-4" />}
               {isUpdatingRole ? "Updating..." : "Update Role"}
             </Button>
           </DialogFooter>

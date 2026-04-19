@@ -1084,177 +1084,165 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle className="text-xl">Suggest a New Book</DialogTitle>
+                  <DialogTitle>Suggest a New Book</DialogTitle>
                   <DialogDescription>
                     Submit a book request for this mosque library. It will appear after review.
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex flex-col gap-5 py-4">
-                  {/* Basic Info Section */}
-                  <div className="flex flex-col gap-2.5">
-                    <div className="grid gap-2.5 sm:grid-cols-2 w-full">
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-title" className="text-xs font-semibold">Title</Label>
-                        <Input
-                          id="suggest-book-title"
-                          placeholder="Book title"
-                          value={newBook.title}
-                          onChange={(event) => setNewBook((current) => ({ ...current, title: event.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-author" className="text-xs font-semibold">Author</Label>
-                        <Input
-                          id="suggest-book-author"
-                          placeholder="Author name"
-                          value={newBook.author}
-                          onChange={(event) => setNewBook((current) => ({ ...current, author: event.target.value }))}
-                        />
-                      </div>
+                <div className="space-y-4 py-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-title">Title</Label>
+                      <Input
+                        id="suggest-book-title"
+                        placeholder="Book title"
+                        value={newBook.title}
+                        onChange={(event) => setNewBook((current) => ({ ...current, title: event.target.value }))}
+                      />
                     </div>
-
-                    <div className="grid gap-2.5 sm:grid-cols-2 w-full">
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-category" className="text-xs font-semibold">Category</Label>
-                        <Select
-                          value={newBook.category}
-                          onValueChange={(value) =>
-                            setNewBook((current) => ({ ...current, category: value as BookCategory }))
-                          }
-                        >
-                          <SelectTrigger id="suggest-book-category">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(bookCategoryLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-language" className="text-xs font-semibold">Language</Label>
-                        <Input
-                          id="suggest-book-language"
-                          placeholder="e.g., English, Arabic"
-                          value={newBook.language}
-                          onChange={(event) => setNewBook((current) => ({ ...current, language: event.target.value }))}
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-author">Author</Label>
+                      <Input
+                        id="suggest-book-author"
+                        placeholder="Author name"
+                        value={newBook.author}
+                        onChange={(event) => setNewBook((current) => ({ ...current, author: event.target.value }))}
+                      />
                     </div>
                   </div>
 
-                  {/* Publisher Section */}
-                  <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-                    <div className="grid gap-2.5 sm:grid-cols-2 w-full">
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-publisher" className="text-xs font-semibold">Publisher</Label>
-                        <Input
-                          id="suggest-book-publisher"
-                          placeholder="Publisher name"
-                          value={newBook.publisher}
-                          onChange={(event) => setNewBook((current) => ({ ...current, publisher: event.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-year" className="text-xs font-semibold">Publish Year</Label>
-                        <Input
-                          id="suggest-book-year"
-                          type="number"
-                          placeholder="YYYY"
-                          value={newBook.publishYear}
-                          onChange={(event) =>
-                            setNewBook((current) => ({
-                              ...current,
-                              publishYear: Number(event.target.value) || new Date().getFullYear(),
-                            }))
-                          }
-                        />
-                      </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-category">Category</Label>
+                      <Select
+                        value={newBook.category}
+                        onValueChange={(value) =>
+                          setNewBook((current) => ({ ...current, category: value as BookCategory }))
+                        }
+                      >
+                        <SelectTrigger id="suggest-book-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(bookCategoryLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-language">Language</Label>
+                      <Input
+                        id="suggest-book-language"
+                        placeholder="e.g., English, Arabic"
+                        value={newBook.language}
+                        onChange={(event) => setNewBook((current) => ({ ...current, language: event.target.value }))}
+                      />
                     </div>
                   </div>
 
-                  {/* Inventory Section */}
-                  <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-                    <div className="grid gap-2.5 sm:grid-cols-3 w-full">
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-copies" className="text-xs font-semibold">Copies</Label>
-                        <Input
-                          id="suggest-book-copies"
-                          type="number"
-                          min={1}
-                          placeholder="1"
-                          value={newBook.totalCopies}
-                          onChange={(event) =>
-                            setNewBook((current) => ({
-                              ...current,
-                              totalCopies: Math.max(1, Number(event.target.value) || 1),
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-condition" className="text-xs font-semibold">Condition</Label>
-                        <Select
-                          value={newBook.condition}
-                          onValueChange={(value) =>
-                            setNewBook((current) => ({ ...current, condition: value as BookCondition }))
-                          }
-                        >
-                          <SelectTrigger id="suggest-book-condition">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(conditionLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <Label htmlFor="suggest-book-location" className="text-xs font-semibold">Location</Label>
-                        <Input
-                          id="suggest-book-location"
-                          placeholder="Shelf location"
-                          value={newBook.location}
-                          onChange={(event) => setNewBook((current) => ({ ...current, location: event.target.value }))}
-                        />
-                      </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-publisher">Publisher</Label>
+                      <Input
+                        id="suggest-book-publisher"
+                        placeholder="Publisher name"
+                        value={newBook.publisher}
+                        onChange={(event) => setNewBook((current) => ({ ...current, publisher: event.target.value }))}
+                      />
                     </div>
-                  </div>
-
-                  {/* Details Section */}
-                  <div className="flex flex-col gap-2.5 pt-2 border-t border-border/30">
-                    <div className="flex flex-col gap-2.5">
-                      <Label htmlFor="suggest-book-description" className="text-xs font-semibold">Description</Label>
-                      <Textarea
-                        id="suggest-book-description"
-                        placeholder="Add any additional notes about this book..."
-                        value={newBook.description}
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-year">Publish Year</Label>
+                      <Input
+                        id="suggest-book-year"
+                        type="number"
+                        placeholder="YYYY"
+                        value={newBook.publishYear}
                         onChange={(event) =>
-                          setNewBook((current) => ({ ...current, description: event.target.value }))
+                          setNewBook((current) => ({
+                            ...current,
+                            publishYear: Number(event.target.value) || new Date().getFullYear(),
+                          }))
                         }
                       />
                     </div>
+                  </div>
 
-                    <div className="flex flex-col gap-2.5">
-                      <Label htmlFor="suggest-book-tags" className="text-xs font-semibold">Tags</Label>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-copies">Copies</Label>
                       <Input
-                        id="suggest-book-tags"
-                        placeholder="Separate with commas (e.g., Islamic, Education, Children)"
-                        value={newBook.tags}
-                        onChange={(event) => setNewBook((current) => ({ ...current, tags: event.target.value }))}
+                        id="suggest-book-copies"
+                        type="number"
+                        min={1}
+                        placeholder="1"
+                        value={newBook.totalCopies}
+                        onChange={(event) =>
+                          setNewBook((current) => ({
+                            ...current,
+                            totalCopies: Math.max(1, Number(event.target.value) || 1),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-condition">Condition</Label>
+                      <Select
+                        value={newBook.condition}
+                        onValueChange={(value) =>
+                          setNewBook((current) => ({ ...current, condition: value as BookCondition }))
+                        }
+                      >
+                        <SelectTrigger id="suggest-book-condition">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(conditionLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-location">Location</Label>
+                      <Input
+                        id="suggest-book-location"
+                        placeholder="Shelf location"
+                        value={newBook.location}
+                        onChange={(event) => setNewBook((current) => ({ ...current, location: event.target.value }))}
                       />
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="suggest-book-description">Description</Label>
+                    <Textarea
+                      id="suggest-book-description"
+                      placeholder="Add any additional notes about this book..."
+                      value={newBook.description}
+                      onChange={(event) =>
+                        setNewBook((current) => ({ ...current, description: event.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="suggest-book-tags">Tags</Label>
+                    <Input
+                      id="suggest-book-tags"
+                      placeholder="Separate with commas (e.g., Islamic, Education, Children)"
+                      value={newBook.tags}
+                      onChange={(event) => setNewBook((current) => ({ ...current, tags: event.target.value }))}
+                    />
+                  </div>
                 </div>
 
-                <DialogFooter className="flex gap-2 pt-2 border-t border-border/30">
+                <DialogFooter>
                   <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                     Cancel
                   </Button>
