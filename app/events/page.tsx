@@ -1,13 +1,15 @@
-import { Header } from '@/components/layout'
-import { Footer } from '@/components/layout'
-import { EventsView } from '@/components/events/events-view'
+import { Footer, Header } from "@/components/layout";
+import { EventsView } from "@/components/events/events-view";
+import { getPublishedEvents } from "@/lib/mosques/public";
 
 export const metadata = {
-  title: 'Events | MosqueConnect',
-  description: 'Discover lectures, classes, community events, and programs at mosques near you.',
-}
+  title: "Events | MosqueConnect",
+  description: "Discover lectures, classes, community events, and programs at mosques near you.",
+};
 
-export default function EventsPage() {
+export default async function EventsPage() {
+  const events = await getPublishedEvents(150);
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
@@ -21,11 +23,11 @@ export default function EventsPage() {
               Discover lectures, classes, community gatherings, and special programs at mosques.
             </p>
           </div>
-          <EventsView />
+          <EventsView initialEvents={events} />
         </div>
       </main>
       <Footer />
     </div>
-  )
+  );
 }
 

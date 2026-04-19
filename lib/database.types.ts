@@ -188,6 +188,55 @@ export interface Donation {
   created_at: string;
 }
 
+export interface ManagementTeam {
+  id: string;
+  mosque_id: string;
+  name: string;
+  team_type: string | null;
+  description: string | null;
+  lead_profile_id: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManagementTeamMember {
+  id: string;
+  team_id: string;
+  mosque_id: string;
+  profile_id: string | null;
+  member_name: string;
+  role_title: string;
+  responsibilities: string[] | null;
+  notes: string | null;
+  is_active: boolean;
+  joined_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MosqueTask {
+  id: string;
+  mosque_id: string;
+  team_id: string | null;
+  assigned_to_profile_id: string | null;
+  title: string;
+  description: string | null;
+  task_type: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  status: "todo" | "in_progress" | "blocked" | "completed" | "cancelled";
+  due_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ShuraMember {
   id: string;
   profile_id: string;

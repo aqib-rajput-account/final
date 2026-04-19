@@ -1,22 +1,21 @@
-"use client"
+import Link from "next/link";
+import { ArrowRight, CheckCircle, MapPin, Users } from "lucide-react";
 
-import Link from 'next/link'
-import { MapPin, Users, Clock, ArrowRight, CheckCircle } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { mockMosques } from '@/lib/data'
+import { getFeaturedMosques } from "@/lib/mosques/public";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function NearbyMosquesPreview() {
-  const mosques = mockMosques.slice(0, 3)
+export async function NearbyMosquesPreview() {
+  const mosques = await getFeaturedMosques(3);
 
   return (
     <Card className="border-border/50">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
         <div>
           <CardTitle className="text-xl font-semibold">Featured Mosques</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Discover mosques in your community
+          <p className="mt-1 text-sm text-muted-foreground">
+            Live from the verified mosque directory
           </p>
         </div>
         <Link href="/mosques">
@@ -27,50 +26,57 @@ export function NearbyMosquesPreview() {
         </Link>
       </CardHeader>
       <CardContent className="space-y-4">
-        {mosques.map((mosque) => (
-          <Link key={mosque.id} href={`/mosques/${mosque.id}`}>
-            <div className="group flex gap-4 rounded-lg border border-border/50 bg-muted/30 p-4 transition-all hover:border-primary/30 hover:bg-muted/50">
-              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <MosqueIcon className="h-8 w-8" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-2">
-                      {mosque.name}
-                      {mosque.isVerified && (
-                        <CheckCircle className="h-4 w-4 text-primary" />
-                      )}
-                    </h3>
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span className="truncate">{mosque.city}, {mosque.state}</span>
+        {mosques.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-sm text-muted-foreground">
+            No verified mosques are published yet. Visit the directory to explore the latest listings as
+            they go live.
+          </div>
+        ) : (
+          mosques.map((mosque) => (
+            <Link key={mosque.id} href={`/mosques/${mosque.id}`}>
+              <div className="group flex gap-4 rounded-lg border border-border/50 bg-muted/30 p-4 transition-all hover:border-primary/30 hover:bg-muted/50">
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <MosqueIcon className="h-8 w-8" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="flex items-center gap-2 font-semibold text-foreground transition-colors group-hover:text-primary">
+                        <span className="truncate">{mosque.name}</span>
+                        {mosque.is_verified && <CheckCircle className="h-4 w-4 flex-shrink-0 text-primary" />}
+                      </h3>
+                      <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span className="truncate">
+                          {mosque.city}, {mosque.state}
+                        </span>
+                      </div>
                     </div>
+                    <Badge variant="secondary" className="flex-shrink-0">
+                      <Users className="mr-1 h-3 w-3" />
+                      {mosque.capacity ?? 0}
+                    </Badge>
                   </div>
-                  <Badge variant="secondary" className="flex-shrink-0">
-                    <Users className="h-3 w-3 mr-1" />
-                    {mosque.capacity}
-                  </Badge>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {mosque.facilities.slice(0, 3).map((facility) => (
-                    <Badge key={facility} variant="outline" className="text-xs font-normal">
-                      {facility}
-                    </Badge>
-                  ))}
-                  {mosque.facilities.length > 3 && (
-                    <Badge variant="outline" className="text-xs font-normal">
-                      +{mosque.facilities.length - 3} more
-                    </Badge>
-                  )}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(mosque.facilities ?? []).slice(0, 3).map((facility: string) => (
+                      <Badge key={facility} variant="outline" className="text-xs font-normal">
+                        {facility}
+                      </Badge>
+                    ))}
+                    {(mosque.facilities ?? []).length > 3 && (
+                      <Badge variant="outline" className="text-xs font-normal">
+                        +{(mosque.facilities ?? []).length - 3} more
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Link>
-        ))}
+            </Link>
+          ))
+        )}
       </CardContent>
     </Card>
-  )
+  );
 }
 
 function MosqueIcon({ className }: { className?: string }) {
@@ -90,6 +96,5 @@ function MosqueIcon({ className }: { className?: string }) {
       <path d="M3 21h18" />
       <path d="M4 10l8-6 8 6" />
     </svg>
-  )
+  );
 }
-

@@ -1,159 +1,198 @@
-"use client"
+"use client";
 
-import Link from 'next/link'
-import { useState } from 'react'
-import { 
-  MapPin, 
-  Phone, 
-  Mail, 
-  Globe, 
-  Clock, 
-  Users, 
-  Calendar,
-  CheckCircle,
-  ChevronLeft,
-  Share2,
-  Navigation,
+import Link from "next/link";
+import type { ElementType, ReactNode } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+  Bell,
+  BookMarked,
   Building2,
-  GraduationCap,
-  BookOpen,
-  Award,
-  Briefcase,
-  Languages,
-  Youtube,
-  Twitter,
-  Facebook,
-  Instagram,
-  User,
-  ShieldCheck,
+  Calendar,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  ExternalLink,
+  Globe,
   Library,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Navigation,
+  Package,
+  Phone,
   Plus,
   Search,
-  BookMarked,
-  Package,
-  Filter,
+  Share2,
+  ShieldCheck,
+  Users,
   X,
-  BookCopy,
-  AlertCircle,
-  Check
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  getEventsByMosqueId, 
-  getAnnouncementsByMosqueId, 
-  getDonationGoalsByMosqueId,
-  getPrayerTimesByMosqueId,
-  getImamsByMosqueId,
-  getManagementByMosqueId
-} from '@/lib/data'
-import type { Mosque, Imam, ManagementMember, LibraryBook, BookCategory, BookCondition } from '@/lib/types'
-import { useLibraryStore, bookCategoryLabels, conditionLabels, itemTypeLabels } from '@/lib/stores'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { toast } from 'sonner'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Separator } from '@/components/ui/separator'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import { cn } from '@/lib/utils'
-import { format, isToday, isYesterday } from 'date-fns'
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  bookCategoryLabels,
+  conditionLabels,
+  itemTypeLabels,
+  useLibraryStore,
+} from "@/lib/stores";
+import type { PublicMosquePageData, PublicManagementTeam } from "@/lib/mosques/public";
+import type { BookCategory, BookCondition, LibraryBook, LibraryItem } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface MosqueDetailProps {
-  mosque: Mosque
+  data: PublicMosquePageData;
 }
 
-export function MosqueDetail({ mosque }: MosqueDetailProps) {
-  const events = getEventsByMosqueId(mosque.id)
-  const announcements = getAnnouncementsByMosqueId(mosque.id)
-  const donationGoals = getDonationGoalsByMosqueId(mosque.id)
-  const prayerTimes = getPrayerTimesByMosqueId(mosque.id)
-  const imams = getImamsByMosqueId(mosque.id)
-  const managementTeam = getManagementByMosqueId(mosque.id)
+const announcementPriorityTone: Record<string, string> = {
+  urgent: "border-red-500/20 bg-red-500/10 text-red-600",
+  high: "border-amber-500/20 bg-amber-500/10 text-amber-600",
+  normal: "border-primary/20 bg-primary/10 text-primary",
+  low: "border-muted-foreground/20 bg-muted text-muted-foreground",
+};
+
+export function MosqueDetail({ data }: MosqueDetailProps) {
+  const { mosque, prayerTimes, imams, announcements, events, donations, recentPosts, managementTeams, stats } =
+    data;
+
+  const destinationQuery =
+    mosque.latitude && mosque.longitude
+      ? `${mosque.latitude},${mosque.longitude}`
+      : [mosque.address, mosque.city, mosque.state, mosque.country].filter(Boolean).join(", ");
+  const mapsQuery = encodeURIComponent(destinationQuery);
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${mapsQuery}`;
+  const mapEmbedUrl = `https://maps.google.com/maps?q=${mapsQuery}&z=15&output=embed`;
+  const prayerDateLabel = prayerTimes ? formatDate(prayerTimes.date) : null;
+  const prayerDateIsToday = prayerTimes ? prayerTimes.date === new Date().toISOString().slice(0, 10) : false;
+
+  const totalRaised = donations.reduce((sum, donation) => sum + donation.amount, 0);
 
   const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({
-        title: mosque.name,
-        text: mosque.description,
-        url: window.location.href,
-      })
-    }
-  }
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: mosque.name,
+          text: mosque.description ?? mosque.name,
+          url: window.location.href,
+        });
+        return;
+      }
 
-  const handleDirections = () => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${mosque.latitude},${mosque.longitude}`
-    window.open(url, '_blank')
-  }
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Mosque link copied to clipboard");
+    } catch {
+      toast.error("Unable to share this page right now");
+    }
+  };
+
+  const openDirections = () => {
+    window.open(directionsUrl, "_blank");
+  };
 
   return (
     <div>
-      {/* Hero Section */}
-      <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-background">
+      <div className="relative overflow-hidden bg-gradient-to-br from-primary/10 via-primary/5 to-background">
         <div className="absolute inset-0 opacity-5">
           <svg className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <pattern id="mosque-pattern" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
-                <path d="M30 0L60 30L30 60L0 30Z" fill="none" stroke="currentColor" strokeWidth="1"/>
+              <pattern id="public-mosque-pattern" x="0" y="0" width="56" height="56" patternUnits="userSpaceOnUse">
+                <path d="M28 0L56 28L28 56L0 28Z" fill="none" stroke="currentColor" strokeWidth="1" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#mosque-pattern)" />
+            <rect width="100%" height="100%" fill="url(#public-mosque-pattern)" />
           </svg>
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 py-6 sm:py-10 lg:px-8">
-          <Link 
+        <div className="relative mx-auto max-w-7xl px-4 py-8 lg:px-8">
+          <Link
             href="/mosques"
-            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 hover:text-primary transition-all mb-8 group active:scale-95"
+            className="group mb-8 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70 transition-colors hover:text-primary"
           >
-            <div className="p-1 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors">
+            <div className="rounded-lg bg-muted p-1 transition-colors group-hover:bg-primary/10">
               <ChevronLeft className="h-4 w-4" />
             </div>
             Back to Directory
           </Link>
 
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-6 text-center sm:text-left items-center sm:items-start">
-              <div className="flex h-24 w-24 sm:h-20 sm:w-20 flex-shrink-0 items-center justify-center rounded-[2rem] sm:rounded-2xl bg-primary shadow-2xl shadow-primary/30 text-primary-foreground transform sm:rotate-0 rotate-3">
-                <MosqueIcon className="h-12 w-12 sm:h-10 sm:w-10" />
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-primary text-primary-foreground shadow-2xl shadow-primary/20">
+                <MosqueIcon className="h-12 w-12" />
               </div>
               <div className="space-y-3">
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <h1 className="text-3xl sm:text-4xl font-black text-foreground tracking-tighter leading-none">{mosque.name}</h1>
-                  {mosque.isVerified && (
-                    <Badge className="gap-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-                      <CheckCircle className="h-3.5 w-3.5 fill-emerald-500/10" />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+                    {mosque.name}
+                  </h1>
+                  {mosque.is_verified ? (
+                    <Badge className="w-fit gap-1.5 rounded-full border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
                       Verified
                     </Badge>
-                  )}
+                  ) : null}
                 </div>
-                <div className="flex flex-col sm:flex-row items-center gap-2 text-muted-foreground/80 font-medium">
-                  <MapPin className="h-4 w-4 text-primary/60" />
-                  <span className="text-sm sm:text-base">{mosque.address}, {mosque.city}</span>
+
+                <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary/70" />
+                    {mosque.address}, {mosque.city}, {mosque.state}
+                  </span>
+                  {mosque.established_year ? (
+                    <span className="rounded-xl border border-border/50 bg-background/60 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-foreground/80">
+                      Est. {mosque.established_year}
+                    </span>
+                  ) : null}
+                  {mosque.capacity ? (
+                    <span className="rounded-xl border border-border/50 bg-background/60 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-foreground/80">
+                      {mosque.capacity.toLocaleString()} Capacity
+                    </span>
+                  ) : null}
                 </div>
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70 bg-muted/50 px-3 py-1.5 rounded-xl border border-border/40">
-                    <Users className="h-3.5 w-3.5" />
-                    {mosque.capacity} Capacity
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-70 bg-muted/50 px-3 py-1.5 rounded-xl border border-border/40">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Est. {mosque.establishedYear}
-                  </div>
-                </div>
+
+                <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                  {mosque.description || "This mosque profile is managed live by the operations team and community panel."}
+                </p>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-              <Button onClick={handleDirections} size="lg" className="gap-3 rounded-2xl h-14 sm:h-12 w-full sm:w-auto bg-primary shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 font-bold">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                onClick={openDirections}
+                size="lg"
+                className="h-12 gap-3 rounded-2xl px-6 shadow-xl shadow-primary/20"
+              >
                 <Navigation className="h-5 w-5" />
                 Get Directions
               </Button>
-              <Button variant="outline" onClick={handleShare} size="lg" className="gap-3 rounded-2xl h-14 sm:h-12 w-full sm:w-auto border-border/60 hover:bg-muted font-bold active:scale-95">
+              <Button
+                onClick={handleShare}
+                variant="outline"
+                size="lg"
+                className="h-12 gap-3 rounded-2xl px-6"
+              >
                 <Share2 className="h-5 w-5" />
                 Share
               </Button>
@@ -162,357 +201,1362 @@ export function MosqueDetail({ mosque }: MosqueDetailProps) {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="mx-auto max-w-7xl px-0 sm:px-4 lg:px-8 py-0 sm:py-8">
-        <div className="grid gap-0 sm:gap-8 lg:grid-cols-3">
-          {/* Left Column - Main Content */}
-          <div className="lg:col-span-2 space-y-6 sm:space-y-8">
-            <Tabs defaultValue="about" className="w-full">
-              <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 sticky top-[64px] z-30 bg-background/80 backdrop-blur-md pt-2 pb-1 border-b border-border/40 sm:border-none sm:static">
-                <TabsList className="h-auto p-1 bg-muted/40 rounded-xl gap-1 inline-flex whitespace-nowrap min-w-full sm:min-w-0">
-                  <TabsTrigger value="about" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">About</TabsTrigger>
-                  <TabsTrigger value="imams" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Imams ({imams.length})</TabsTrigger>
-                  <TabsTrigger value="management" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Management</TabsTrigger>
-                  <TabsTrigger value="library" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Library</TabsTrigger>
-                  <TabsTrigger value="events" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Events ({events.length})</TabsTrigger>
-                  <TabsTrigger value="announcements" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Announcements</TabsTrigger>
-                  <TabsTrigger value="donations" className="rounded-lg py-2.5 px-5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-lg active:scale-95 transition-all">Donations </TabsTrigger>
+      <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Active Imams" value={stats.activeImams} tone="primary" />
+          <StatCard label="Live Programs" value={stats.livePrograms} tone="sky" />
+          <StatCard label="Community Posts" value={stats.communityPosts} tone="emerald" />
+          <StatCard label="Completed Donations" value={stats.completedDonations} tone="amber" />
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_360px]">
+          <div className="space-y-6">
+            <Tabs defaultValue="overview" className="w-full">
+              <div className="sticky top-[64px] z-20 -mx-4 overflow-x-auto border-b border-border/50 bg-background/90 px-4 pb-2 pt-1 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-muted/30 sm:p-2 lg:static">
+                <TabsList className="inline-flex h-auto min-w-full gap-1 bg-transparent p-0 sm:min-w-0">
+                  <PrimaryTab value="overview" label="Overview" />
+                  <PrimaryTab value="people" label="People" />
+                  <PrimaryTab value="programs" label="Programs" />
+                  <PrimaryTab value="community" label="Community" />
+                  <PrimaryTab value="library" label="Library" />
                 </TabsList>
               </div>
 
-              <TabsContent value="about" className="mt-6 space-y-6 px-4 sm:px-0">
-                <Card className="border-border/40 shadow-sm rounded-2xl overflow-hidden">
-                  <CardHeader className="bg-muted/30 pb-4 border-b border-border/40">
-                    <CardTitle className="text-lg font-black tracking-tight flex items-center gap-2">
-                       <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-                          <Building2 className="h-4 w-4" />
-                       </div>
-                       About the Mosque
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <p className="text-muted-foreground leading-relaxed font-medium">
-                      {mosque.description}
-                    </p>
-                  </CardContent>
-                </Card>
+              <TabsContent value="overview" className="mt-6">
+                <Tabs defaultValue="about" className="space-y-6">
+                  <SubTabList>
+                    <TabsTrigger value="about">About</TabsTrigger>
+                    <TabsTrigger value="prayer">Prayer Times</TabsTrigger>
+                    <TabsTrigger value="visit">Visit & Map</TabsTrigger>
+                  </SubTabList>
 
-                <Card className="border-border/40 shadow-sm rounded-2xl overflow-hidden">
-                   <CardHeader className="bg-muted/30 pb-4 border-b border-border/40">
-                    <CardTitle className="text-lg font-black tracking-tight flex items-center gap-2">
-                       <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-                          <ShieldCheck className="h-4 w-4" />
-                       </div>
-                       Available Facilities
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="flex flex-wrap gap-2.5">
-                      {mosque.facilities.map((facility) => (
-                        <Badge key={facility} variant="secondary" className="text-xs font-bold py-2 px-4 rounded-xl bg-muted/50 border border-border/40 hover:bg-primary/5 hover:text-primary transition-all">
-                          {facility}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                  <TabsContent value="about" className="space-y-6">
+                    <Card className="rounded-3xl border-border/50">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg font-black">
+                          <Building2 className="h-5 w-5 text-primary" />
+                          About This Mosque
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-5">
+                        <p className="leading-relaxed text-muted-foreground">
+                          {mosque.description || "A welcoming mosque serving the community with daily worship, programming, and pastoral care."}
+                        </p>
 
-                {/* Map Section */}
-                <Card className="border-border/40 shadow-sm rounded-2xl overflow-hidden">
-                   <CardHeader className="bg-muted/30 pb-4 border-b border-border/40">
-                    <CardTitle className="text-lg font-black tracking-tight flex items-center gap-2">
-                       <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-                          <MapPin className="h-4 w-4" />
-                       </div>
-                       Location & Directions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="group relative h-64 sm:h-80 rounded-2xl bg-muted/30 border border-border/40 overflow-hidden flex items-center justify-center transition-all hover:bg-muted/40">
-                      <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:20px_20px]" />
-                      <div className="relative text-center px-6">
-                        <div className="h-16 w-16 mx-auto bg-background border border-border/40 rounded-3xl flex items-center justify-center shadow-xl mb-4 group-hover:scale-110 transition-transform">
-                           <MapPin className="h-8 w-8 text-primary shadow-primary/20" />
+                        <div>
+                          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                            Facilities
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {(mosque.facilities ?? []).length > 0 ? (
+                              mosque.facilities?.map((facility) => (
+                                <Badge
+                                  key={facility}
+                                  variant="secondary"
+                                  className="rounded-xl border border-border/50 bg-muted/40 px-3 py-2 text-xs font-bold"
+                                >
+                                  {facility}
+                                </Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">Facilities will appear here once they are added.</p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm font-bold text-foreground mb-1 leading-tight">
-                          {mosque.address}
-                        </p>
-                        <p className="text-xs text-muted-foreground font-medium mb-6">
-                          {mosque.city}, {mosque.state} {mosque.zipCode}
-                        </p>
-                        <Button 
-                          onClick={handleDirections}
-                          className="gap-2 rounded-xl font-bold px-6 shadow-lg shadow-primary/10"
-                        >
-                          <Navigation className="h-4 w-4" />
-                          View on Google Maps
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="imams" className="mt-6">
-                <div className="space-y-6">
-                  {imams.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-12 text-center">
-                        <User className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                        <p className="mt-4 text-muted-foreground">No imam profiles available</p>
                       </CardContent>
                     </Card>
-                  ) : (
-                    imams.map((imam) => (
-                      <ImamProfile key={imam.id} imam={imam} mosqueId={mosque.id} />
-                    ))
-                  )}
-                </div>
+                  </TabsContent>
+
+                  <TabsContent value="prayer" className="space-y-6">
+                    <Card className="rounded-3xl border-border/50">
+                      <CardHeader className="flex flex-row items-start justify-between gap-4">
+                        <div>
+                          <CardTitle className="flex items-center gap-2 text-lg font-black">
+                            <Clock className="h-5 w-5 text-primary" />
+                            Prayer Schedule
+                          </CardTitle>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {prayerDateLabel
+                              ? prayerDateIsToday
+                                ? `Today's posted timetable for ${prayerDateLabel}`
+                                : `Latest available timetable for ${prayerDateLabel}`
+                              : "Prayer times have not been published yet."}
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href="/prayer-times">Full Prayer Times</Link>
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        {prayerTimes ? (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
+                            <PrayerTimeCard label="Sunrise" adhan={prayerTimes.sunrise} />
+                            <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
+                            <PrayerTimeCard label="Asr" adhan={prayerTimes.asr_adhan} iqama={prayerTimes.asr_iqama} />
+                            <PrayerTimeCard label="Maghrib" adhan={prayerTimes.maghrib_adhan} iqama={prayerTimes.maghrib_iqama} />
+                            <PrayerTimeCard label="Isha" adhan={prayerTimes.isha_adhan} iqama={prayerTimes.isha_iqama} />
+                            {prayerTimes.jummah_time ? (
+                              <PrayerTimeCard
+                                label="Jummah"
+                                adhan={prayerTimes.jummah_time}
+                                iqama={prayerTimes.jummah_iqama}
+                                className="sm:col-span-2"
+                              />
+                            ) : null}
+                          </div>
+                        ) : (
+                          <EmptyState
+                            title="No prayer schedule published"
+                            description="The mosque team has not posted prayer times yet."
+                          />
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="visit" className="space-y-6">
+                    <Card className="overflow-hidden rounded-3xl border-border/50">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg font-black">
+                          <MapPin className="h-5 w-5 text-primary" />
+                          Visit & Directions
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div className="overflow-hidden rounded-2xl border border-border/50">
+                          <iframe
+                            title={`Map for ${mosque.name}`}
+                            src={mapEmbedUrl}
+                            className="h-72 w-full"
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                          />
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <InfoRow label="Address" value={`${mosque.address}, ${mosque.city}, ${mosque.state}${mosque.zip_code ? ` ${mosque.zip_code}` : ""}`} />
+                          <InfoRow label="Country" value={mosque.country} />
+                          <InfoRow label="Phone" value={mosque.phone} href={mosque.phone ? `tel:${mosque.phone}` : undefined} />
+                          <InfoRow label="Email" value={mosque.email} href={mosque.email ? `mailto:${mosque.email}` : undefined} />
+                          <InfoRow
+                            label="Website"
+                            value={mosque.website}
+                            href={mosque.website ? normalizeExternalUrl(mosque.website) : undefined}
+                          />
+                          <InfoRow
+                            label="Directions"
+                            value="Open in Google Maps"
+                            href={directionsUrl}
+                            external
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
               </TabsContent>
 
-              <TabsContent value="management" className="mt-6 px-4 sm:px-0 space-y-8">
-                {managementTeam.length === 0 ? (
-                  <Card className="border-dashed border-border/40 py-20">
-                    <CardContent className="text-center">
-                      <Users className="h-16 w-16 mx-auto text-muted-foreground/20 mb-4" />
-                      <p className="text-muted-foreground font-bold italic">No management directory available yet</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <>
-                    <ManagementOverview team={managementTeam} />
-                    <div className="grid gap-6 md:grid-cols-2">
-                      {managementTeam.map((member) => (
-                        <ManagementMemberCard key={member.id} member={member} mosqueId={mosque.id} />
-                      ))}
+              <TabsContent value="people" className="mt-6">
+                <Tabs defaultValue="imams" className="space-y-6">
+                  <SubTabList>
+                    <TabsTrigger value="imams">Imams</TabsTrigger>
+                    <TabsTrigger value="teams">Teams</TabsTrigger>
+                  </SubTabList>
+
+                  <TabsContent value="imams" className="space-y-6">
+                    {imams.length === 0 ? (
+                      <EmptyState title="No imam profiles yet" description="The mosque has not published imam profiles yet." />
+                    ) : (
+                      <div className="grid gap-6 md:grid-cols-2">
+                        {imams.map((imam) => (
+                          <Card key={imam.id} className="rounded-3xl border-border/50">
+                            <CardContent className="p-6">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
+                                    {imam.title || "Imam"}
+                                  </p>
+                                  <h3 className="mt-2 text-xl font-black tracking-tight">{imam.name}</h3>
+                                  <p className="mt-3 line-clamp-4 text-sm leading-relaxed text-muted-foreground">
+                                    {imam.bio || "Biography coming soon."}
+                                  </p>
+                                </div>
+                                {imam.is_active ? (
+                                  <Badge className="rounded-full border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
+                                    Active
+                                  </Badge>
+                                ) : null}
+                              </div>
+
+                              <div className="mt-5 flex flex-wrap gap-2">
+                                {(imam.languages ?? []).slice(0, 3).map((language) => (
+                                  <Badge key={language} variant="outline" className="rounded-full px-3 py-1">
+                                    {language}
+                                  </Badge>
+                                ))}
+                                {(imam.specializations ?? []).slice(0, 2).map((specialization) => (
+                                  <Badge key={specialization} variant="secondary" className="rounded-full px-3 py-1">
+                                    {specialization}
+                                  </Badge>
+                                ))}
+                              </div>
+
+                              <div className="mt-6 flex flex-wrap gap-3">
+                                <Button asChild className="rounded-xl">
+                                  <Link href={`/mosques/${mosque.id}/imam/${imam.id}`}>View Profile</Link>
+                                </Button>
+                                {imam.email ? (
+                                  <Button variant="outline" asChild className="rounded-xl">
+                                    <a href={`mailto:${imam.email}`}>Email Imam</a>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="teams" className="space-y-6">
+                    {managementTeams.length === 0 ? (
+                      <EmptyState
+                        title="No management teams published"
+                        description="Management teams will appear here once the mosque operations structure is published."
+                      />
+                    ) : (
+                      <>
+                        <div className="grid gap-6 md:grid-cols-2">
+                          {managementTeams.map((team) => (
+                            <ManagementTeamCard key={team.id} team={team} mosqueId={mosque.id} />
+                          ))}
+                        </div>
+                        <div className="flex justify-end">
+                          <Button variant="outline" asChild className="rounded-xl">
+                            <Link href={`/mosques/${mosque.id}/management`}>View Full Management Directory</Link>
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="programs" className="mt-6">
+                <Tabs defaultValue="events" className="space-y-6">
+                  <SubTabList>
+                    <TabsTrigger value="events">Events</TabsTrigger>
+                    <TabsTrigger value="announcements">Announcements</TabsTrigger>
+                  </SubTabList>
+
+                  <TabsContent value="events" className="space-y-4">
+                    {events.length === 0 ? (
+                      <EmptyState
+                        title="No upcoming programs scheduled"
+                        description="New events will appear here as soon as the mosque publishes them."
+                      />
+                    ) : (
+                      events.map((event) => (
+                        <Link key={event.id} href={`/events/${event.id}`}>
+                          <Card className="rounded-3xl border-border/50 transition-colors hover:border-primary/30">
+                            <CardContent className="p-5">
+                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="secondary" className="rounded-full px-3 py-1 capitalize">
+                                      {formatLabel(event.event_type)}
+                                    </Badge>
+                                    {event.is_recurring ? (
+                                      <Badge variant="outline" className="rounded-full px-3 py-1">
+                                        Recurring
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <h3 className="text-lg font-black tracking-tight">{event.title}</h3>
+                                  <p className="text-sm leading-relaxed text-muted-foreground">
+                                    {event.description || "Event details will be shared soon."}
+                                  </p>
+                                </div>
+
+                                <div className="space-y-2 text-sm text-muted-foreground sm:text-right">
+                                  <p className="font-semibold text-foreground">{formatDate(event.start_date)}</p>
+                                  <p>{formatTime(event.start_date)}</p>
+                                  <p>{event.location || mosque.name}</p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </Link>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="announcements" className="space-y-4">
+                    {announcements.length === 0 ? (
+                      <EmptyState
+                        title="No announcements posted"
+                        description="The latest notices and updates from the mosque will show here."
+                      />
+                    ) : (
+                      announcements.map((announcement) => (
+                        <Card key={announcement.id} className="rounded-3xl border-border/50">
+                          <CardContent className="p-5">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "rounded-full px-3 py-1 capitalize",
+                                      announcementPriorityTone[announcement.priority] ?? announcementPriorityTone.normal
+                                    )}
+                                  >
+                                    {announcement.priority}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatDate(announcement.published_at)}
+                                  </span>
+                                </div>
+                                <h3 className="text-lg font-black tracking-tight">{announcement.title}</h3>
+                                <p className="text-sm leading-relaxed text-muted-foreground">{announcement.content}</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="community" className="mt-6">
+                <Tabs defaultValue="posts" className="space-y-6">
+                  <SubTabList>
+                    <TabsTrigger value="posts">Posts</TabsTrigger>
+                    <TabsTrigger value="donations">Donations</TabsTrigger>
+                  </SubTabList>
+
+                  <TabsContent value="posts" className="space-y-4">
+                    {recentPosts.length === 0 ? (
+                      <EmptyState
+                        title="No community posts yet"
+                        description="When the mosque posts updates to the community feed, they will show up here."
+                      />
+                    ) : (
+                      recentPosts.map((post) => (
+                        <Card key={post.id} className="rounded-3xl border-border/50">
+                          <CardContent className="space-y-4 p-5">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">
+                                  {post.author?.full_name || "Mosque community"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{formatDate(post.created_at)}</p>
+                              </div>
+                              <Badge variant="outline" className="rounded-full capitalize">
+                                {post.category || post.post_type || "update"}
+                              </Badge>
+                            </div>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{post.content}</p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="donations" className="space-y-6">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <Card className="rounded-3xl border-border/50">
+                        <CardContent className="p-5 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                            Total Raised
+                          </p>
+                          <p className="mt-3 text-3xl font-black tracking-tight text-primary">
+                            {formatCurrency(totalRaised)}
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <Card className="rounded-3xl border-border/50">
+                        <CardContent className="p-5 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                            Donations
+                          </p>
+                          <p className="mt-3 text-3xl font-black tracking-tight">
+                            {donations.length}
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <Card className="rounded-3xl border-border/50">
+                        <CardContent className="p-5 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                            Latest Gift
+                          </p>
+                          <p className="mt-3 text-3xl font-black tracking-tight">
+                            {donations[0] ? formatCurrency(donations[0].amount) : formatCurrency(0)}
+                          </p>
+                        </CardContent>
+                      </Card>
                     </div>
-                  </>
-                )}
+
+                    {donations.length === 0 ? (
+                      <EmptyState
+                        title="No completed donations yet"
+                        description="Donation activity will appear here once it is recorded by the mosque."
+                      />
+                    ) : (
+                      donations.map((donation) => (
+                        <Card key={donation.id} className="rounded-3xl border-border/50">
+                          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="font-semibold text-foreground capitalize">
+                                {formatLabel(donation.donation_type || "general")}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {formatDate(donation.created_at)}{donation.is_anonymous ? " • Anonymous donor" : ""}
+                              </p>
+                            </div>
+                            <Badge className="w-fit rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">
+                              {formatCurrency(donation.amount)}
+                            </Badge>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+                </Tabs>
               </TabsContent>
 
               <TabsContent value="library" className="mt-6">
                 <MosqueLibrary mosqueId={mosque.id} mosqueName={mosque.name} />
               </TabsContent>
-
-              <TabsContent value="events" className="mt-6">
-                <div className="space-y-4">
-                  {events.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-12 text-center">
-                        <Calendar className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                        <p className="mt-4 text-muted-foreground">No upcoming events</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    events.map((event) => (
-                      <Link key={event.id} href={`/events/${event.id}`}>
-                        <Card className="hover:border-primary/30 transition-colors">
-                          <CardContent className="p-4">
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <h3 className="font-semibold">{event.title}</h3>
-                                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                                  {event.description}
-                                </p>
-                                <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="h-4 w-4" />
-                                    {new Date(event.startDate).toLocaleDateString()}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="h-4 w-4" />
-                                    {event.startTime}
-                                  </span>
-                                </div>
-                              </div>
-                              <Badge variant="secondary">{event.category}</Badge>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    ))
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="announcements" className="mt-6">
-                <div className="space-y-4">
-                  {announcements.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-12 text-center">
-                        <Building2 className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                        <p className="mt-4 text-muted-foreground">No announcements</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    announcements.map((announcement) => (
-                      <Card key={announcement.id} className={announcement.isPinned ? 'border-primary/30' : ''}>
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            {announcement.isPinned && (
-                              <Badge variant="default" className="flex-shrink-0">Pinned</Badge>
-                            )}
-                            <div className="flex-1">
-                              <h3 className="font-semibold">{announcement.title}</h3>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {announcement.content}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {announcement.authorName} - {new Date(announcement.publishDate).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="donations" className="mt-6">
-                <div className="space-y-4">
-                  {donationGoals.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-12 text-center">
-                        <Building2 className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                        <p className="mt-4 text-muted-foreground">No active donation campaigns</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    donationGoals.map((goal) => {
-                      const progress = (goal.currentAmount / goal.targetAmount) * 100
-                      return (
-                        <Card key={goal.id}>
-                          <CardContent className="p-4">
-                            <h3 className="font-semibold">{goal.title}</h3>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {goal.description}
-                            </p>
-                            <div className="mt-4">
-                              <div className="flex justify-between text-sm mb-2">
-                                <span className="font-medium">${goal.currentAmount.toLocaleString()}</span>
-                                <span className="text-muted-foreground">of ${goal.targetAmount.toLocaleString()}</span>
-                              </div>
-                              <div className="h-2 rounded-full bg-muted">
-                                <div 
-                                  className="h-full rounded-full bg-primary transition-all"
-                                  style={{ width: `${Math.min(progress, 100)}%` }}
-                                />
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {progress.toFixed(0)}% funded - ends {new Date(goal.endDate).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <Button className="w-full mt-4">Donate Now</Button>
-                          </CardContent>
-                        </Card>
-                      )
-                    })
-                  )}
-                </div>
-              </TabsContent>
             </Tabs>
           </div>
 
-          {/* Right Column - Sidebar Widgets */}
-          <div className="space-y-6 sm:space-y-8 px-4 sm:px-0 mt-8 lg:mt-0">
-            {/* Today's Prayer Times Widget */}
-            {prayerTimes && (
-              <Card className="border-border/40 shadow-2xl shadow-primary/5 rounded-[2rem] overflow-hidden sticky top-[80px]">
-                <CardHeader className="bg-gradient-to-br from-primary to-primary/90 text-primary-foreground p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                       <h3 className="text-xl font-black tracking-tighter italic">Iqamah Times</h3>
-                       <p className="text-[10px] uppercase font-black tracking-[0.3em] opacity-80 mt-1">Today's Schedule</p>
-                    </div>
-                    <div className="h-12 w-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20">
-                       <Clock className="h-6 w-6 text-white" />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-3 space-y-1.5 mt-2 pb-6">
-                  <PrayerTimeRow label="Fajr" time={prayerTimes.fajr} iqama={prayerTimes.fajrIqama} />
-                  <PrayerTimeRow label="Dhuhr" time={prayerTimes.dhuhr} iqama={prayerTimes.dhuhrIqama} />
-                  <PrayerTimeRow label="Asr" time={prayerTimes.asr} iqama={prayerTimes.asrIqama} />
-                  <PrayerTimeRow label="Maghrib" time={prayerTimes.maghrib} iqama={prayerTimes.maghribIqama} />
-                  <PrayerTimeRow label="Isha" time={prayerTimes.isha} iqama={prayerTimes.ishaIqama} />
-                  {prayerTimes.jummah && (
-                    <div className="mt-4 pt-4 border-t border-border/40 px-2">
-                      <PrayerTimeRow label="Jummah" time={prayerTimes.jummah} iqama={prayerTimes.jummahIqama} isSpecial />
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+          <div className="space-y-6">
+            <Card className="rounded-[2rem] border-border/50 shadow-sm lg:sticky lg:top-[88px]">
+              <CardHeader className="border-b border-border/40 bg-gradient-to-br from-primary to-primary/90 text-primary-foreground">
+                <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight">
+                  <Clock className="h-5 w-5" />
+                  Quick Prayer View
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4">
+                {prayerTimes ? (
+                  <>
+                    <QuickPrayerRow label="Fajr" value={prayerTimes.fajr_iqama || prayerTimes.fajr_adhan} />
+                    <QuickPrayerRow label="Dhuhr" value={prayerTimes.dhuhr_iqama || prayerTimes.dhuhr_adhan} />
+                    <QuickPrayerRow label="Asr" value={prayerTimes.asr_iqama || prayerTimes.asr_adhan} />
+                    <QuickPrayerRow label="Maghrib" value={prayerTimes.maghrib_iqama || prayerTimes.maghrib_adhan} />
+                    <QuickPrayerRow label="Isha" value={prayerTimes.isha_iqama || prayerTimes.isha_adhan} />
+                    {prayerTimes.jummah_time ? (
+                      <>
+                        <Separator />
+                        <QuickPrayerRow label="Jummah" value={prayerTimes.jummah_iqama || prayerTimes.jummah_time} />
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Prayer times have not been published yet.</p>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* Contact Card */}
-            <Card className="border-border/40 shadow-sm rounded-3xl overflow-hidden">
-               <CardHeader className="pb-3 px-6 pt-6">
-                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Connect With Mosque</h4>
-               </CardHeader>
-               <CardContent className="px-3 pb-3">
-                  <div className="space-y-1">
-                    {mosque.phone && (
-                      <a href={`tel:${mosque.phone}`} className="flex items-center gap-4 p-4 rounded-2xl hover:bg-muted/80 transition-all active:scale-[0.98] border border-transparent hover:border-border/40 group">
-                        <div className="h-10 w-10 shrink-0 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                           <Phone className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                           <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest leading-none mb-1">Phone</p>
-                           <p className="font-bold text-sm truncate">{mosque.phone}</p>
-                        </div>
-                      </a>
-                    )}
-                    {mosque.email && (
-                      <a href={`mailto:${mosque.email}`} className="flex items-center gap-4 p-4 rounded-2xl hover:bg-muted/80 transition-all active:scale-[0.98] border border-transparent hover:border-border/40 group">
-                        <div className="h-10 w-10 shrink-0 rounded-xl bg-sky-500/10 text-sky-600 flex items-center justify-center group-hover:bg-sky-500 group-hover:text-white transition-all">
-                           <Mail className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                           <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest leading-none mb-1">Email</p>
-                           <p className="font-bold text-sm truncate">{mosque.email}</p>
-                        </div>
-                      </a>
-                    )}
-                    {mosque.website && (
-                      <a href={mosque.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 rounded-2xl hover:bg-muted/80 transition-all active:scale-[0.98] border border-transparent hover:border-border/40 group">
-                        <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all">
-                           <Globe className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                           <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest leading-none mb-1">Website</p>
-                           <p className="font-bold text-sm truncate">Visit Mosque Website</p>
-                        </div>
-                      </a>
-                    )}
-                  </div>
-               </CardContent>
+            <Card className="rounded-3xl border-border/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg font-black">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  Contact & Access
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <ContactAction
+                  icon={Phone}
+                  label="Phone"
+                  value={mosque.phone || "No phone listed"}
+                  href={mosque.phone ? `tel:${mosque.phone}` : undefined}
+                />
+                <ContactAction
+                  icon={Mail}
+                  label="Email"
+                  value={mosque.email || "No email listed"}
+                  href={mosque.email ? `mailto:${mosque.email}` : undefined}
+                />
+                <ContactAction
+                  icon={Globe}
+                  label="Website"
+                  value={mosque.website || "No website listed"}
+                  href={mosque.website ? normalizeExternalUrl(mosque.website) : undefined}
+                />
+                <ContactAction
+                  icon={Navigation}
+                  label="Directions"
+                  value="Open in Google Maps"
+                  href={directionsUrl}
+                  external
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-3xl border-border/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg font-black">
+                  <Bell className="h-5 w-5 text-primary" />
+                  Live With Management Panels
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Events, announcements, imam assignments, and mosque profile updates shown here are pulled
+                  from the same live records managed in the Admin, Shura, and Imam panels.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <MiniMetric label="Announcements" value={announcements.length} />
+                  <MiniMetric label="Upcoming Events" value={events.length} />
+                  <MiniMetric label="Active Teams" value={managementTeams.filter((team) => team.is_active).length} />
+                  <MiniMetric label="Recent Posts" value={recentPosts.length} />
+                </div>
+              </CardContent>
             </Card>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-function PrayerTimeRow({ label, time, iqama, isSpecial }: { label: string; time: string; iqama?: string; isSpecial?: boolean }) {
+function PrimaryTab({ value, label }: { value: string; label: string }) {
   return (
-    <div className={cn(
-      "flex items-center justify-between p-3 rounded-xl transition-all",
-      isSpecial ? "bg-white/10 text-white" : "hover:bg-muted/50"
-    )}>
-      <span className="font-bold text-sm tracking-tight">{label}</span>
-      <div className="text-right">
-        <span className="font-black text-sm tracking-tighter">{time}</span>
-        {iqama && (
-          <span className={cn(
-            "text-[10px] font-bold ml-2",
-            isSpecial ? "text-white/60" : "text-muted-foreground/60"
-          )}>(Iqama: {iqama})</span>
-        )}
+    <TabsTrigger
+      value={value}
+      className="rounded-xl px-4 py-2.5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm"
+    >
+      {label}
+    </TabsTrigger>
+  );
+}
+
+function SubTabList({ children }: { children: ReactNode }) {
+  return (
+    <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-2xl bg-muted/40 p-1.5">
+      {children}
+    </TabsList>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "primary" | "sky" | "emerald" | "amber";
+}) {
+  const toneClass =
+    tone === "sky"
+      ? "bg-sky-500/10 text-sky-600"
+      : tone === "emerald"
+        ? "bg-emerald-500/10 text-emerald-600"
+        : tone === "amber"
+          ? "bg-amber-500/10 text-amber-600"
+          : "bg-primary/10 text-primary";
+
+  return (
+    <Card className="rounded-3xl border-border/50">
+      <CardContent className="flex items-center justify-between p-5">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+          <p className="mt-2 text-3xl font-black tracking-tight">{value}</p>
+        </div>
+        <div className={cn("rounded-2xl p-3", toneClass)}>
+          <Users className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PrayerTimeCard({
+  label,
+  adhan,
+  iqama,
+  className,
+}: {
+  label: string;
+  adhan: string | null;
+  iqama?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-2xl border border-border/50 bg-muted/20 p-4", className)}>
+      <div className="flex items-center justify-between gap-4">
+        <p className="font-bold text-foreground">{label}</p>
+        <div className="text-right">
+          <p className="font-black tracking-tight text-primary">{adhan || "TBD"}</p>
+          {iqama ? <p className="text-xs text-muted-foreground">Iqama: {iqama}</p> : null}
+        </div>
       </div>
     </div>
-  )
+  );
+}
+
+function ManagementTeamCard({ team, mosqueId }: { team: PublicManagementTeam; mosqueId: string }) {
+  return (
+    <Card className="rounded-3xl border-border/50">
+      <CardContent className="space-y-4 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
+              {formatLabel(team.team_type || "operations")}
+            </p>
+            <h3 className="mt-2 text-xl font-black tracking-tight">{team.name}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {team.description || "This team helps manage mosque operations and community delivery."}
+            </p>
+          </div>
+          {team.is_active ? (
+            <Badge className="rounded-full border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
+              Active
+            </Badge>
+          ) : null}
+        </div>
+
+        <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/70">Team Lead</p>
+          <p className="mt-2 font-semibold text-foreground">{team.lead?.full_name || "Lead will be assigned soon"}</p>
+        </div>
+
+        <div>
+          <p className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+            Members
+          </p>
+          {team.members.length > 0 ? (
+            <div className="space-y-2">
+              {team.members.slice(0, 4).map((member) => (
+                <div key={member.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border/40 px-4 py-3">
+                  <div>
+                    <p className="font-medium text-foreground">{member.member_name}</p>
+                    <p className="text-xs text-muted-foreground">{member.role_title}</p>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild className="rounded-xl">
+                    <Link href={`/mosques/${mosqueId}/management/${member.id}`}>View</Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No team members published yet.</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ContactAction({
+  icon: Icon,
+  label,
+  value,
+  href,
+  external,
+}: {
+  icon: ElementType;
+  label: string;
+  value: string;
+  href?: string;
+  external?: boolean;
+}) {
+  const content = (
+    <div className="flex items-center gap-4 rounded-2xl border border-transparent p-4 transition-colors hover:border-border/40 hover:bg-muted/40">
+      <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+        <p className="mt-1 truncate font-medium text-foreground">{value}</p>
+      </div>
+      {href ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
+    </div>
+  );
+
+  if (!href) {
+    return content;
+  }
+
+  return (
+    <a href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined}>
+      {content}
+    </a>
+  );
+}
+
+function QuickPrayerRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-muted/20 px-3 py-2">
+      <span className="font-medium text-foreground">{label}</span>
+      <span className="font-black tracking-tight text-primary">{value || "TBD"}</span>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-border/40 bg-muted/20 p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+      <p className="mt-2 text-xl font-black tracking-tight text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  href,
+  external,
+}: {
+  label: string;
+  value: string | null;
+  href?: string;
+  external?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+      {href && value ? (
+        <a
+          href={href}
+          target={external ? "_blank" : undefined}
+          rel={external ? "noreferrer" : undefined}
+          className="mt-2 inline-flex items-center gap-2 font-medium text-primary hover:underline"
+        >
+          {value}
+          {external ? <ExternalLink className="h-4 w-4" /> : null}
+        </a>
+      ) : (
+        <p className="mt-2 font-medium text-foreground">{value || "Not available"}</p>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <Card className="rounded-3xl border-dashed border-border/60">
+      <CardContent className="py-14 text-center">
+        <Building2 className="mx-auto h-12 w-12 text-muted-foreground/40" />
+        <h3 className="mt-4 text-lg font-semibold">{title}</h3>
+        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName: string }) {
+  const { getBooksByMosque, getItemsByMosque, getPendingBooks, addBook } = useLibraryStore();
+  const [activeTab, setActiveTab] = useState<"books" | "items">("books");
+  const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newBook, setNewBook] = useState({
+    title: "",
+    author: "",
+    isbn: "",
+    category: "general_islamic" as BookCategory,
+    language: "English",
+    description: "",
+    publisher: "",
+    publishYear: new Date().getFullYear(),
+    totalCopies: 1,
+    location: "",
+    condition: "good" as BookCondition,
+    tags: "",
+    isReferenceOnly: false,
+  });
+
+  const storedBooks = getBooksByMosque(mosqueId);
+  const storedItems = getItemsByMosque(mosqueId);
+  const pendingBooks = getPendingBooks(mosqueId);
+
+  const books = storedBooks.length > 0 ? storedBooks : getStarterBooks(mosqueId);
+  const items = storedItems.length > 0 ? storedItems : getStarterItems(mosqueId);
+  const usingStarterCatalog = storedBooks.length === 0 && storedItems.length === 0;
+
+  const filteredBooks = useMemo(() => {
+    const query = deferredSearchQuery.trim().toLowerCase();
+    return books.filter((book) => {
+      const matchesSearch =
+        !query ||
+        book.title.toLowerCase().includes(query) ||
+        book.author.toLowerCase().includes(query) ||
+        book.location.toLowerCase().includes(query) ||
+        book.tags?.some((tag) => tag.toLowerCase().includes(query));
+      const matchesCategory = categoryFilter === "all" || book.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [books, categoryFilter, deferredSearchQuery]);
+
+  const filteredItems = useMemo(() => {
+    const query = deferredSearchQuery.trim().toLowerCase();
+    return items.filter((item) => {
+      return (
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query) ||
+        item.location.toLowerCase().includes(query)
+      );
+    });
+  }, [deferredSearchQuery, items]);
+
+  const handleAddBook = () => {
+    if (!newBook.title || !newBook.author || !newBook.location) {
+      toast.error("Please fill in the required book fields");
+      return;
+    }
+
+    addBook({
+      mosqueId,
+      title: newBook.title,
+      author: newBook.author,
+      isbn: newBook.isbn || undefined,
+      category: newBook.category,
+      language: newBook.language,
+      description: newBook.description || undefined,
+      publisher: newBook.publisher || undefined,
+      publishYear: newBook.publishYear || undefined,
+      totalCopies: newBook.totalCopies,
+      availableCopies: newBook.totalCopies,
+      location: newBook.location,
+      condition: newBook.condition,
+      addedBy: "community-suggestion",
+      addedByName: "Community Suggestion",
+      status: "pending_approval",
+      tags: newBook.tags ? newBook.tags.split(",").map((value) => value.trim()) : undefined,
+      isReferencOnly: newBook.isReferenceOnly,
+    });
+
+    setIsAddDialogOpen(false);
+    setNewBook({
+      title: "",
+      author: "",
+      isbn: "",
+      category: "general_islamic",
+      language: "English",
+      description: "",
+      publisher: "",
+      publishYear: new Date().getFullYear(),
+      totalCopies: 1,
+      location: "",
+      condition: "good",
+      tags: "",
+      isReferenceOnly: false,
+    });
+    toast.success("Book suggestion submitted for review");
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="rounded-3xl border-border/50">
+        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="flex items-center gap-2 text-lg font-black">
+              <Library className="h-5 w-5 text-primary" />
+              Mosque Library & Inventory
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Search the reading shelf, daily-use items, and new suggestions for {mosqueName}.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {usingStarterCatalog ? (
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                Starter catalog
+              </Badge>
+            ) : null}
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="rounded-xl gap-2">
+                  <Plus className="h-4 w-4" />
+                  Suggest Book
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Suggest a New Book</DialogTitle>
+                  <DialogDescription>
+                    Submit a book request for this mosque library. It will appear after review.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-title">Title</Label>
+                      <Input
+                        id="suggest-book-title"
+                        value={newBook.title}
+                        onChange={(event) => setNewBook((current) => ({ ...current, title: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-author">Author</Label>
+                      <Input
+                        id="suggest-book-author"
+                        value={newBook.author}
+                        onChange={(event) => setNewBook((current) => ({ ...current, author: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-category">Category</Label>
+                      <Select
+                        value={newBook.category}
+                        onValueChange={(value) =>
+                          setNewBook((current) => ({ ...current, category: value as BookCategory }))
+                        }
+                      >
+                        <SelectTrigger id="suggest-book-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(bookCategoryLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-language">Language</Label>
+                      <Input
+                        id="suggest-book-language"
+                        value={newBook.language}
+                        onChange={(event) => setNewBook((current) => ({ ...current, language: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-publisher">Publisher</Label>
+                      <Input
+                        id="suggest-book-publisher"
+                        value={newBook.publisher}
+                        onChange={(event) => setNewBook((current) => ({ ...current, publisher: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-year">Publish Year</Label>
+                      <Input
+                        id="suggest-book-year"
+                        type="number"
+                        value={newBook.publishYear}
+                        onChange={(event) =>
+                          setNewBook((current) => ({
+                            ...current,
+                            publishYear: Number(event.target.value) || new Date().getFullYear(),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-location">Shelf Location</Label>
+                      <Input
+                        id="suggest-book-location"
+                        value={newBook.location}
+                        onChange={(event) => setNewBook((current) => ({ ...current, location: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="suggest-book-description">Description</Label>
+                    <Textarea
+                      id="suggest-book-description"
+                      rows={4}
+                      value={newBook.description}
+                      onChange={(event) =>
+                        setNewBook((current) => ({ ...current, description: event.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-copies">Copies</Label>
+                      <Input
+                        id="suggest-book-copies"
+                        type="number"
+                        min={1}
+                        value={newBook.totalCopies}
+                        onChange={(event) =>
+                          setNewBook((current) => ({
+                            ...current,
+                            totalCopies: Math.max(1, Number(event.target.value) || 1),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-condition">Condition</Label>
+                      <Select
+                        value={newBook.condition}
+                        onValueChange={(value) =>
+                          setNewBook((current) => ({ ...current, condition: value as BookCondition }))
+                        }
+                      >
+                        <SelectTrigger id="suggest-book-condition">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(conditionLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="suggest-book-tags">Tags</Label>
+                      <Input
+                        id="suggest-book-tags"
+                        value={newBook.tags}
+                        onChange={(event) => setNewBook((current) => ({ ...current, tags: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleAddBook}>Submit Suggestion</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-4">
+          <LibraryStatCard label="Books" value={books.length} icon={BookMarked} />
+          <LibraryStatCard
+            label="Available Copies"
+            value={books.reduce((sum, book) => sum + book.availableCopies, 0)}
+            icon={Library}
+          />
+          <LibraryStatCard label="Other Items" value={items.length} icon={Package} />
+          <LibraryStatCard label="Pending Review" value={pendingBooks.length} icon={MessageSquare} />
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl border-border/50">
+        <CardContent className="space-y-5 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={activeTab === "books" ? "default" : "outline"}
+                size="sm"
+                className="rounded-xl"
+                onClick={() => setActiveTab("books")}
+              >
+                Books
+              </Button>
+              <Button
+                variant={activeTab === "items" ? "default" : "outline"}
+                size="sm"
+                className="rounded-xl"
+                onClick={() => setActiveTab("items")}
+              >
+                Inventory Items
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative min-w-[260px] flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={activeTab === "books" ? "Search books, authors, tags..." : "Search inventory..."}
+                  className="rounded-xl border-border/60 pl-10 pr-10"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+              {activeTab === "books" ? (
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="w-[190px] rounded-xl border-border/60">
+                    <SelectValue placeholder="Filter category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {Object.entries(bookCategoryLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
+          </div>
+
+          {activeTab === "books" ? (
+            filteredBooks.length === 0 ? (
+              <EmptyState
+                title="No books match this search"
+                description="Try another search term or clear the category filter."
+              />
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {filteredBooks.map((book) => (
+                  <Card key={book.id} className="rounded-3xl border-border/50">
+                    <CardContent className="space-y-4 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
+                            {bookCategoryLabels[book.category]}
+                          </p>
+                          <h3 className="mt-2 text-lg font-black tracking-tight">{book.title}</h3>
+                          <p className="text-sm text-muted-foreground">{book.author}</p>
+                        </div>
+                        <Badge variant="secondary" className="rounded-full px-3 py-1">
+                          {book.availableCopies}/{book.totalCopies}
+                        </Badge>
+                      </div>
+                      <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                        {book.description || "Library description coming soon."}
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <LibraryMeta label="Language" value={book.language} />
+                        <LibraryMeta label="Location" value={book.location} />
+                        <LibraryMeta label="Condition" value={conditionLabels[book.condition]} />
+                        <LibraryMeta label="Publisher" value={book.publisher || "Not listed"} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )
+          ) : filteredItems.length === 0 ? (
+            <EmptyState
+              title="No inventory items match this search"
+              description="Try a different search term or browse the full inventory."
+            />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {filteredItems.map((item) => (
+                <Card key={item.id} className="rounded-3xl border-border/50">
+                  <CardContent className="space-y-4 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
+                          {itemTypeLabels[item.type]}
+                        </p>
+                        <h3 className="mt-2 text-lg font-black tracking-tight">{item.name}</h3>
+                        <p className="text-sm text-muted-foreground">{item.category}</p>
+                      </div>
+                      <Badge variant="secondary" className="rounded-full px-3 py-1">
+                        {item.availableQuantity}/{item.quantity}
+                      </Badge>
+                    </div>
+                    <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                      {item.description || "Inventory description coming soon."}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <LibraryMeta label="Location" value={item.location} />
+                      <LibraryMeta label="Condition" value={conditionLabels[item.condition]} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function LibraryStatCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  icon: ElementType;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/40 bg-muted/20 p-4 text-center">
+      <Icon className="mx-auto mb-2 h-5 w-5 text-primary" />
+      <p className="text-2xl font-black tracking-tight">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function LibraryMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/40 bg-muted/20 p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+      <p className="mt-2 text-sm font-medium text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function getStarterBooks(mosqueId: string): LibraryBook[] {
+  return [
+    {
+      id: `starter-book-1-${mosqueId}`,
+      mosqueId,
+      title: "Riyadh us-Saliheen",
+      author: "Imam An-Nawawi",
+      category: "hadith",
+      language: "Arabic / English",
+      description: "A foundational collection of hadith and daily guidance used widely in mosque libraries.",
+      publisher: "Darussalam",
+      publishYear: 1999,
+      totalCopies: 6,
+      availableCopies: 4,
+      location: "Main Shelf A-2",
+      condition: "good",
+      addedBy: "starter-catalog",
+      addedByName: "Starter Catalog",
+      status: "approved",
+      tags: ["hadith", "daily guidance", "community favorite"],
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+    {
+      id: `starter-book-2-${mosqueId}`,
+      mosqueId,
+      title: "The Sealed Nectar",
+      author: "Safiur Rahman Mubarakpuri",
+      category: "seerah",
+      language: "English",
+      description: "Award-winning biography of the Prophet Muhammad, excellent for study circles and newcomers.",
+      publisher: "Darussalam",
+      publishYear: 2002,
+      totalCopies: 4,
+      availableCopies: 3,
+      location: "Biography Shelf B-1",
+      condition: "excellent",
+      addedBy: "starter-catalog",
+      addedByName: "Starter Catalog",
+      status: "approved",
+      tags: ["seerah", "biography", "study circle"],
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+    {
+      id: `starter-book-3-${mosqueId}`,
+      mosqueId,
+      title: "Fortress of the Muslim",
+      author: "Said bin Ali bin Wahf Al-Qahtani",
+      category: "spirituality",
+      language: "Arabic / English",
+      description: "Pocket-sized collection of daily adhkar and supplications frequently stocked in mosque foyers.",
+      publisher: "Darussalam",
+      publishYear: 1998,
+      totalCopies: 12,
+      availableCopies: 9,
+      location: "Welcome Desk",
+      condition: "excellent",
+      addedBy: "starter-catalog",
+      addedByName: "Starter Catalog",
+      status: "approved",
+      tags: ["dua", "adhkar", "daily worship"],
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+  ];
+}
+
+function getStarterItems(mosqueId: string): LibraryItem[] {
+  return [
+    {
+      id: `starter-item-1-${mosqueId}`,
+      mosqueId,
+      name: "Prayer Mats",
+      type: "prayer_mat",
+      category: "Prayer Essentials",
+      description: "Visitor prayer mats kept available near the main prayer hall entrance.",
+      quantity: 30,
+      availableQuantity: 26,
+      location: "Prayer Hall Entrance",
+      condition: "good",
+      addedBy: "starter-catalog",
+      addedByName: "Starter Catalog",
+      status: "approved",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+    {
+      id: `starter-item-2-${mosqueId}`,
+      mosqueId,
+      name: "Quran Stands",
+      type: "quran_stand",
+      category: "Reading Accessories",
+      description: "Wooden rehal stands for classes, recitation, and personal study.",
+      quantity: 18,
+      availableQuantity: 15,
+      location: "Library Annex",
+      condition: "excellent",
+      addedBy: "starter-catalog",
+      addedByName: "Starter Catalog",
+      status: "approved",
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    },
+  ];
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatLabel(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function normalizeExternalUrl(url: string) {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
 function MosqueIcon({ className }: { className?: string }) {
@@ -532,872 +1576,5 @@ function MosqueIcon({ className }: { className?: string }) {
       <path d="M3 21h18" />
       <path d="M4 10l8-6 8 6" />
     </svg>
-  )
+  );
 }
-
-// Imam Profile Component
-function ImamProfile({ imam, mosqueId }: { imam: Imam; mosqueId: string }) {
-  return (
-    <Card className="border-border/40 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
-      <CardContent className="p-0">
-        {/* Header with Photo and Basic Info */}
-        <div className="flex flex-col sm:flex-row gap-0 sm:gap-6">
-          <div className="relative group overflow-hidden bg-muted/30 sm:bg-transparent">
-            <Avatar className="h-48 w-full sm:h-32 sm:w-32 rounded-none sm:rounded-2xl transition-transform duration-500 group-hover:scale-110">
-              <AvatarImage src={imam.photoUrl} alt={imam.name} className="object-cover" />
-              <AvatarFallback className="rounded-none sm:rounded-2xl text-4xl sm:text-2xl bg-primary/10 text-primary font-black">
-                {imam.name.split(' ').map(n => n[0]).join('')}
-              </AvatarFallback>
-            </Avatar>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent sm:hidden" />
-            <div className="absolute bottom-4 left-4 sm:hidden">
-               <Badge className="bg-primary shadow-lg">{imam.title}</Badge>
-            </div>
-          </div>
-          
-          <div className="flex-1 p-6">
-            <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-              <div>
-                <Link href={`/mosques/${mosqueId}/imam/${imam.id}`} className="hover:text-primary transition-colors group">
-                  <h3 className="text-2xl font-bold text-foreground tracking-tight group-hover:translate-x-1 transition-transform">{imam.name}</h3>
-                </Link>
-                <div className="hidden sm:block mt-1">
-                  <Badge variant="secondary" className="font-bold tracking-tight">{imam.title}</Badge>
-                </div>
-              </div>
-              <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-                {imam.yearsOfExperience}+ Years Exp
-              </Badge>
-            </div>
-            
-            <p className="mt-4 text-muted-foreground leading-relaxed text-sm sm:text-base line-clamp-3 font-medium opacity-90">
-              {imam.biography}
-            </p>
-
-            {/* Contact Info */}
-            <div className="mt-6 flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-6">
-              {imam.contactEmail && (
-                <a href={`mailto:${imam.contactEmail}`} className="flex items-center gap-2 text-sm font-bold text-primary/80 hover:text-primary transition-all active:scale-95">
-                  <div className="p-1.5 rounded-lg bg-primary/5">
-                    <Mail className="h-4 w-4" />
-                  </div>
-                  {imam.contactEmail}
-                </a>
-              )}
-              {imam.officeHours && (
-                <span className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-                  <div className="p-1.5 rounded-lg bg-muted">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  Hours: {imam.officeHours}
-                </span>
-              )}
-            </div>
-
-            {/* Social Media & Actions */}
-            <div className="mt-6 flex flex-row items-center justify-between border-t border-border/40 pt-4 gap-4">
-              {imam.socialMedia && (
-                <div className="flex gap-2.5">
-                  {imam.socialMedia.youtube && (
-                    <a href={imam.socialMedia.youtube} target="_blank" rel="noopener noreferrer" className="p-3 rounded-xl bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all active:scale-90">
-                      <Youtube className="h-5 w-5" />
-                    </a>
-                  )}
-                  {imam.socialMedia.twitter && (
-                    <a href={imam.socialMedia.twitter} target="_blank" rel="noopener noreferrer" className="p-3 rounded-xl bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all active:scale-90">
-                      <Twitter className="h-5 w-5" />
-                    </a>
-                  )}
-                  {imam.socialMedia.facebook && (
-                    <a href={imam.socialMedia.facebook} target="_blank" rel="noopener noreferrer" className="p-3 rounded-xl bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all active:scale-90">
-                      <Facebook className="h-5 w-5" />
-                    </a>
-                  )}
-                  {imam.socialMedia.instagram && (
-                    <a href={imam.socialMedia.instagram} target="_blank" rel="noopener noreferrer" className="p-3 rounded-xl bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all active:scale-90">
-                      <Instagram className="h-5 w-5" />
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <Link href={`/mosques/${mosqueId}/imam/${imam.id}`} className="flex-shrink-0 animate-in fade-in slide-in-from-right-2 duration-1000">
-                <Button variant="default" size="sm" className="rounded-xl font-bold px-6 shadow-lg shadow-primary/20 transition-all active:scale-95">
-                  Full Profile
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Information Accordion */}
-        <div className="px-6 pb-6">
-          <Accordion type="multiple" className="w-full">
-            {/* Education */}
-            <AccordionItem value="education" className="border-border/40">
-              <AccordionTrigger className="hover:no-underline py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/5 text-primary">
-                    <GraduationCap className="h-5 w-5" />
-                  </div>
-                  <span className="font-bold tracking-tight">Education & Qualifications</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="space-y-4 pt-2">
-                  {imam.education.map((edu, index) => (
-                    <div key={index} className="flex gap-4 p-4 rounded-2xl bg-muted/20 border border-border/40">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <GraduationCap className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-sm">{edu.degree} in {edu.field}</h4>
-                        <p className="text-xs text-muted-foreground font-medium">{edu.institution}</p>
-                        <p className="text-[10px] text-muted-foreground/60 font-black uppercase tracking-widest mt-1.5">{edu.location} • {edu.year}</p>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {imam.certifications && imam.certifications.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-border/40">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-3 ml-1">Certifications</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {imam.certifications.map((cert, index) => (
-                          <Badge key={index} variant="outline" className="rounded-lg border-border/60 bg-muted/10 font-bold px-3 py-1">{cert}</Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* Specializations */}
-            <AccordionItem value="specializations" className="border-border/40">
-              <AccordionTrigger className="hover:no-underline py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/5 text-primary">
-                    <BookOpen className="h-5 w-5" />
-                  </div>
-                  <span className="font-bold tracking-tight">Specializations & Languages</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="grid gap-6 pt-2">
-                  <div>
-                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-3 ml-1">Expertise</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {imam.specializations.map((spec, index) => (
-                        <Badge key={index} className="bg-primary/5 text-primary border-primary/20 font-bold px-4 py-1.5 rounded-xl">{spec}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div className="pt-4 border-t border-border/40">
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-3 ml-1">Languages</h4>
-                    <div className="flex flex-wrap gap-3">
-                      {imam.languages.map((lang, index) => (
-                        <div key={index} className="flex items-center gap-2 text-sm font-bold bg-muted/40 px-4 py-2 rounded-xl border border-border/40">
-                           <Languages className="h-4 w-4 text-primary/60" />
-                           {lang}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Management Overview Component
-function ManagementOverview({ team }: { team: ManagementMember[] }) {
-  const boardMembers = team.filter(m => ['president', 'vice_president', 'secretary', 'treasurer', 'trustee', 'board_member'].includes(m.position))
-  const committeeHeads = team.filter(m => !['president', 'vice_president', 'secretary', 'treasurer', 'trustee', 'board_member'].includes(m.position))
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-primary" />
-          Mosque Leadership Overview
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="text-center p-4 rounded-lg bg-primary/5">
-            <p className="text-3xl font-bold text-primary">{team.length}</p>
-            <p className="text-sm text-muted-foreground">Total Members</p>
-          </div>
-          <div className="text-center p-4 rounded-lg bg-muted">
-            <p className="text-3xl font-bold">{boardMembers.length}</p>
-            <p className="text-sm text-muted-foreground">Board Members</p>
-          </div>
-          <div className="text-center p-4 rounded-lg bg-muted">
-            <p className="text-3xl font-bold">{committeeHeads.length}</p>
-            <p className="text-sm text-muted-foreground">Committee Heads</p>
-          </div>
-          <div className="text-center p-4 rounded-lg bg-muted">
-            <p className="text-3xl font-bold">{team.filter(m => m.isElected).length}</p>
-            <p className="text-sm text-muted-foreground">Elected Positions</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Management Member Card Component
-function ManagementMemberCard({ member, mosqueId }: { member: ManagementMember; mosqueId: string }) {
-  const positionLabels: Record<string, string> = {
-    president: 'President',
-    vice_president: 'Vice President',
-    secretary: 'Secretary',
-    treasurer: 'Treasurer',
-    trustee: 'Trustee',
-    board_member: 'Board Member',
-    committee_head: 'Committee Head',
-    volunteer_coordinator: 'Volunteer Coordinator',
-    education_director: 'Education Director',
-    youth_director: 'Youth Director',
-    women_coordinator: 'Women\'s Coordinator',
-    facilities_manager: 'Facilities Manager',
-    security_head: 'Security Head',
-    other: 'Staff Member'
-  }
-
-  return (
-    <Card className="hover:border-primary/40 shadow-sm hover:shadow-md transition-all active:scale-[0.98] group overflow-hidden border-border/40 rounded-2xl">
-      <CardContent className="p-5 flex items-center sm:items-start gap-4 sm:gap-6">
-        <div className="relative shrink-0">
-          <Avatar className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-primary/5 shadow-inner transition-transform group-hover:scale-105 duration-500">
-            <AvatarImage src={member.photoUrl} alt={member.name} className="object-cover" />
-            <AvatarFallback className="rounded-2xl bg-primary/5 text-primary text-xl font-black">
-              {member.name.split(' ').map(n => n[0]).join('')}
-            </AvatarFallback>
-          </Avatar>
-          <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 border-2 border-background shadow-sm" />
-        </div>
-        
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
-            <Link href={`/mosques/${mosqueId}/management/${member.id}`} className="hover:text-primary transition-colors block">
-              <h4 className="text-base sm:text-lg font-black truncate tracking-tight leading-tight">{member.name}</h4>
-            </Link>
-            <Badge variant="secondary" className="w-fit text-[9px] font-black uppercase tracking-widest bg-muted/60 text-muted-foreground border-transparent rounded-lg px-2 py-0.5">
-              {positionLabels[member.position] || member.position}
-            </Badge>
-          </div>
-
-          {member.department && (
-            <p className="text-[10px] font-bold text-primary/60 uppercase tracking-widest mt-1 opacity-80">{member.department}</p>
-          )}
-          
-          <div className="mt-4 flex flex-wrap gap-4 border-t border-border/40 pt-3 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:flex">
-            <a href={`mailto:${member.email}`} className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground hover:text-primary transition-all">
-              <Mail className="h-3.5 w-3.5 opacity-60" />
-              <span className="truncate">{member.email}</span>
-            </a>
-            {member.phone && (
-              <a href={`tel:${member.phone}`} className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground hover:text-primary transition-all">
-                <Phone className="h-3.5 w-3.5 opacity-60" />
-                {member.phone}
-              </a>
-            )}
-          </div>
-
-          <div className="mt-4 sm:mt-2 flex items-center justify-between sm:justify-start gap-4">
-            <Link href={`/mosques/${mosqueId}/management/${member.id}`} className="flex-1 sm:flex-none">
-              <Button variant="outline" size="sm" className="w-full sm:w-auto text-[11px] font-black uppercase tracking-widest h-9 rounded-xl border-border/60 hover:bg-primary/5 hover:text-primary hover:border-primary/20 transition-all active:scale-95">
-                View Bio
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// Mosque Library Component
-function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName: string }) {
-  const { 
-    getBooksByMosque, 
-    getItemsByMosque, 
-    addBook,
-    getPendingBooks
-  } = useLibraryStore()
-  
-  const [activeTab, setActiveTab] = useState<'books' | 'items'>('books')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null)
-  
-  // Form state for adding new book
-  const [newBook, setNewBook] = useState({
-    title: '',
-    author: '',
-    isbn: '',
-    category: 'general_islamic' as BookCategory,
-    language: 'English',
-    description: '',
-    publisher: '',
-    publishYear: new Date().getFullYear(),
-    totalCopies: 1,
-    location: '',
-    condition: 'good' as BookCondition,
-    tags: '',
-    isReferenceOnly: false
-  })
-  
-  const books = getBooksByMosque(mosqueId)
-  const items = getItemsByMosque(mosqueId)
-  const pendingBooks = getPendingBooks(mosqueId)
-  
-  // Filter books
-  const filteredBooks = books.filter(book => {
-    const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         book.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (book.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
-    const matchesCategory = categoryFilter === 'all' || book.category === categoryFilter
-    return matchesSearch && matchesCategory
-  })
-  
-  // Filter items
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         item.category.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
-  })
-  
-  const handleAddBook = () => {
-    if (!newBook.title || !newBook.author || !newBook.location) {
-      toast.error('Please fill in all required fields')
-      return
-    }
-    
-    addBook({
-      mosqueId,
-      title: newBook.title,
-      author: newBook.author,
-      isbn: newBook.isbn || undefined,
-      category: newBook.category,
-      language: newBook.language,
-      description: newBook.description || undefined,
-      publisher: newBook.publisher || undefined,
-      publishYear: newBook.publishYear || undefined,
-      totalCopies: newBook.totalCopies,
-      availableCopies: newBook.totalCopies,
-      location: newBook.location,
-      condition: newBook.condition,
-      addedBy: 'current-user',
-      addedByName: 'Community Member',
-      status: 'pending_approval',
-      tags: newBook.tags ? newBook.tags.split(',').map(t => t.trim()) : undefined,
-      isReferencOnly: newBook.isReferenceOnly
-    })
-    
-    toast.success('Book submitted for approval', {
-      description: 'Your book suggestion will be reviewed by the library admin.'
-    })
-    
-    setIsAddDialogOpen(false)
-    setNewBook({
-      title: '',
-      author: '',
-      isbn: '',
-      category: 'general_islamic',
-      language: 'English',
-      description: '',
-      publisher: '',
-      publishYear: new Date().getFullYear(),
-      totalCopies: 1,
-      location: '',
-      condition: 'good',
-      tags: '',
-      isReferenceOnly: false
-    })
-  }
-  
-  const categories = Object.entries(bookCategoryLabels)
-  
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Library className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <CardTitle>Mosque Library & Inventory</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Browse books and items available at {mosqueName}
-                </p>
-              </div>
-            </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Suggest Book
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Suggest a New Book</DialogTitle>
-                  <DialogDescription>
-                    Submit a book suggestion to the library. It will be reviewed by the library admin before being added.
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="title">Book Title *</Label>
-                      <Input
-                        id="title"
-                        value={newBook.title}
-                        onChange={(e) => setNewBook({ ...newBook, title: e.target.value })}
-                        placeholder="Enter book title"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="author">Author *</Label>
-                      <Input
-                        id="author"
-                        value={newBook.author}
-                        onChange={(e) => setNewBook({ ...newBook, author: e.target.value })}
-                        placeholder="Enter author name"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="category">Category *</Label>
-                      <Select
-                        value={newBook.category}
-                        onValueChange={(value) => setNewBook({ ...newBook, category: value as BookCategory })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map(([value, label]) => (
-                            <SelectItem key={value} value={value}>{label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="language">Language</Label>
-                      <Select
-                        value={newBook.language}
-                        onValueChange={(value) => setNewBook({ ...newBook, language: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select language" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="English">English</SelectItem>
-                          <SelectItem value="Arabic">Arabic</SelectItem>
-                          <SelectItem value="Arabic/English">Arabic/English</SelectItem>
-                          <SelectItem value="Urdu">Urdu</SelectItem>
-                          <SelectItem value="Turkish">Turkish</SelectItem>
-                          <SelectItem value="French">French</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="isbn">ISBN (Optional)</Label>
-                      <Input
-                        id="isbn"
-                        value={newBook.isbn}
-                        onChange={(e) => setNewBook({ ...newBook, isbn: e.target.value })}
-                        placeholder="978-..."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="publisher">Publisher</Label>
-                      <Input
-                        id="publisher"
-                        value={newBook.publisher}
-                        onChange={(e) => setNewBook({ ...newBook, publisher: e.target.value })}
-                        placeholder="Publisher name"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="publishYear">Year</Label>
-                      <Input
-                        id="publishYear"
-                        type="number"
-                        value={newBook.publishYear}
-                        onChange={(e) => setNewBook({ ...newBook, publishYear: parseInt(e.target.value) })}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      value={newBook.description}
-                      onChange={(e) => setNewBook({ ...newBook, description: e.target.value })}
-                      placeholder="Brief description of the book..."
-                      rows={3}
-                    />
-                  </div>
-                  
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="copies">Number of Copies</Label>
-                      <Input
-                        id="copies"
-                        type="number"
-                        min={1}
-                        value={newBook.totalCopies}
-                        onChange={(e) => setNewBook({ ...newBook, totalCopies: parseInt(e.target.value) || 1 })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="condition">Condition</Label>
-                      <Select
-                        value={newBook.condition}
-                        onValueChange={(value) => setNewBook({ ...newBook, condition: value as BookCondition })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select condition" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(conditionLabels).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>{label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="location">Shelf Location *</Label>
-                      <Input
-                        id="location"
-                        value={newBook.location}
-                        onChange={(e) => setNewBook({ ...newBook, location: e.target.value })}
-                        placeholder="e.g., Shelf A-1"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="tags">Tags (comma-separated)</Label>
-                    <Input
-                      id="tags"
-                      value={newBook.tags}
-                      onChange={(e) => setNewBook({ ...newBook, tags: e.target.value })}
-                      placeholder="e.g., beginner, recommended, classic"
-                    />
-                  </div>
-                </div>
-                
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleAddBook}>
-                    Submit for Approval
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {/* Stats */}
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="rounded-lg bg-primary/5 p-4 text-center">
-              <BookMarked className="h-6 w-6 mx-auto text-primary mb-2" />
-              <p className="text-2xl font-bold">{books.length}</p>
-              <p className="text-xs text-muted-foreground">Total Books</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 text-center">
-              <BookCopy className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-              <p className="text-2xl font-bold">{books.reduce((acc, b) => acc + b.availableCopies, 0)}</p>
-              <p className="text-xs text-muted-foreground">Available Copies</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 text-center">
-              <Package className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-              <p className="text-2xl font-bold">{items.length}</p>
-              <p className="text-xs text-muted-foreground">Other Items</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 text-center">
-              <AlertCircle className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-              <p className="text-2xl font-bold">{pendingBooks.length}</p>
-              <p className="text-xs text-muted-foreground">Pending Approval</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
-      {/* Tabs and Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-            <div className="flex gap-2">
-              <Button
-                variant={activeTab === 'books' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveTab('books')}
-                className="gap-2"
-              >
-                <BookOpen className="h-4 w-4" />
-                Books ({books.length})
-              </Button>
-              <Button
-                variant={activeTab === 'items' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveTab('items')}
-                className="gap-2"
-              >
-                <Package className="h-4 w-4" />
-                Items ({items.length})
-              </Button>
-            </div>
-            
-            <div className="flex gap-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-[200px]"
-                />
-              </div>
-              {activeTab === 'books' && (
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-          
-          {/* Books Grid */}
-          {activeTab === 'books' && (
-            filteredBooks.length === 0 ? (
-              <div className="py-12 text-center">
-                <BookOpen className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                <p className="mt-4 text-muted-foreground">
-                  {searchQuery || categoryFilter !== 'all' 
-                    ? 'No books match your search criteria' 
-                    : 'No books in the library yet'}
-                </p>
-                <Button 
-                  variant="outline" 
-                  className="mt-4 gap-2"
-                  onClick={() => setIsAddDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Be the first to suggest a book
-                </Button>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredBooks.map((book) => (
-                  <BookCard 
-                    key={book.id} 
-                    book={book} 
-                    onClick={() => setSelectedBook(book)}
-                  />
-                ))}
-              </div>
-            )
-          )}
-          
-          {/* Items Grid */}
-          {activeTab === 'items' && (
-            filteredItems.length === 0 ? (
-              <div className="py-12 text-center">
-                <Package className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                <p className="mt-4 text-muted-foreground">
-                  {searchQuery ? 'No items match your search' : 'No inventory items available'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredItems.map((item) => (
-                  <Card key={item.id} className="hover:border-primary/30 transition-colors">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <Package className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold truncate">{item.name}</h4>
-                          <p className="text-sm text-muted-foreground">{item.category}</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {item.availableQuantity} / {item.quantity} available
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Location: {item.location}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )
-          )}
-        </CardContent>
-      </Card>
-      
-      {/* Book Detail Dialog */}
-      <Dialog open={!!selectedBook} onOpenChange={() => setSelectedBook(null)}>
-        <DialogContent className="max-w-2xl">
-          {selectedBook && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-xl">{selectedBook.title}</DialogTitle>
-                <DialogDescription>by {selectedBook.author}</DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge>{bookCategoryLabels[selectedBook.category]}</Badge>
-                  <Badge variant="outline">{selectedBook.language}</Badge>
-                  <Badge variant="outline">{conditionLabels[selectedBook.condition]}</Badge>
-                  {selectedBook.isReferencOnly && (
-                    <Badge variant="secondary">Reference Only</Badge>
-                  )}
-                </div>
-                
-                {selectedBook.description && (
-                  <p className="text-muted-foreground">{selectedBook.description}</p>
-                )}
-                
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-sm">
-                      <span className="font-medium">Publisher:</span>{' '}
-                      {selectedBook.publisher || 'N/A'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Year:</span>{' '}
-                      {selectedBook.publishYear || 'N/A'}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">ISBN:</span>{' '}
-                      {selectedBook.isbn || 'N/A'}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-sm">
-                      <span className="font-medium">Location:</span>{' '}
-                      {selectedBook.location}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Available:</span>{' '}
-                      {selectedBook.availableCopies} of {selectedBook.totalCopies} copies
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Added by:</span>{' '}
-                      {selectedBook.addedByName}
-                    </p>
-                  </div>
-                </div>
-                
-                {selectedBook.tags && selectedBook.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {selectedBook.tags.map((tag, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="flex gap-2 pt-4">
-                  {!selectedBook.isReferencOnly && selectedBook.availableCopies > 0 ? (
-                    <Button className="flex-1 gap-2">
-                      <Check className="h-4 w-4" />
-                      Request to Borrow
-                    </Button>
-                  ) : (
-                    <Button className="flex-1" disabled>
-                      {selectedBook.isReferencOnly ? 'Reference Only' : 'Not Available'}
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={() => setSelectedBook(null)}>
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-// Book Card Component
-function BookCard({ book, onClick }: { book: LibraryBook; onClick: () => void }) {
-  return (
-    <Card 
-      className="hover:border-primary/30 transition-colors cursor-pointer"
-      onClick={onClick}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <BookOpen className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className="font-semibold line-clamp-2">{book.title}</h4>
-            <p className="text-sm text-muted-foreground truncate">{book.author}</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              <Badge variant="secondary" className="text-xs">
-                {bookCategoryLabels[book.category]}
-              </Badge>
-              {book.availableCopies === 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  Unavailable
-                </Badge>
-              )}
-              {book.isReferencOnly && (
-                <Badge variant="outline" className="text-xs">
-                  Ref Only
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              {book.availableCopies} of {book.totalCopies} available
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
