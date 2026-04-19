@@ -114,90 +114,78 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="relative overflow-hidden border-b border-border/40 bg-gradient-to-b from-primary/8 via-primary/4 to-background">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(var(--primary-rgb,26,127,90),0.15),transparent)]" />
-        <div className="absolute inset-0 opacity-[0.03]">
+      {/* Hero Section - Clean minimal design */}
+      <div className="relative border-b border-border/30 bg-[#f0f5f3]">
+        {/* Subtle diamond pattern */}
+        <div className="absolute inset-0 opacity-[0.4]">
           <svg className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <pattern id="public-mosque-pattern" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M20 0L40 20L20 40L0 20Z" fill="none" stroke="currentColor" strokeWidth="0.5" />
+              <pattern id="mosque-diamond-pattern" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+                <path d="M16 0L32 16L16 32L0 16Z" fill="none" stroke="#166534" strokeWidth="0.3" strokeOpacity="0.15" />
               </pattern>
             </defs>
-            <rect width="100%" height="100%" fill="url(#public-mosque-pattern)" />
+            <rect width="100%" height="100%" fill="url(#mosque-diamond-pattern)" />
           </svg>
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 py-6 lg:px-8 lg:py-10">
+        <div className="relative mx-auto max-w-6xl px-4 py-5 lg:px-6">
+          {/* Back Link */}
           <Link
             href="/mosques"
-            className="group mb-6 inline-flex items-center gap-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="group mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/80 shadow-sm transition-all group-hover:border-primary/30 group-hover:bg-primary/5">
-              <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-            </div>
+            <ChevronLeft className="h-4 w-4" />
             <span>Back to Directory</span>
           </Link>
 
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              <div className="relative flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xl shadow-primary/25 sm:h-24 sm:w-24 sm:rounded-3xl">
-                <MosqueIcon className="h-10 w-10 sm:h-12 sm:w-12" />
-                {mosque.is_verified && (
-                  <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-emerald-500 text-white shadow-lg">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  </div>
-                )}
+          {/* Main Hero Content */}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-5">
+              {/* Mosque Icon */}
+              <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10">
+                <MosqueIcon className="h-8 w-8 text-primary" />
               </div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl lg:text-4xl">
-                      {mosque.name}
-                    </h1>
-                    {mosque.is_verified && (
-                      <Badge className="hidden gap-1.5 rounded-full border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 sm:inline-flex dark:text-emerald-400">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Verified
-                      </Badge>
-                    )}
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-primary" />
-                      {mosque.address}, {mosque.city}, {mosque.state}
-                    </span>
-                    {mosque.established_year && (
-                      <>
-                        <span className="text-border">|</span>
-                        <span className="font-medium text-foreground/70">
-                          Est. {mosque.established_year}
-                        </span>
-                      </>
-                    )}
-                    {mosque.capacity && (
-                      <>
-                        <span className="text-border">|</span>
-                        <span className="inline-flex items-center gap-1 font-medium text-foreground/70">
-                          <Users className="h-3.5 w-3.5" />
-                          {mosque.capacity.toLocaleString()}
-                        </span>
-                      </>
-                    )}
-                  </div>
+              {/* Mosque Info */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                    {mosque.name}
+                  </h1>
+                  {mosque.is_verified && (
+                    <Badge variant="outline" className="gap-1.5 rounded-full border-primary/40 bg-transparent px-3 py-0.5 text-xs font-medium text-primary">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Verified
+                    </Badge>
+                  )}
                 </div>
 
-                <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                  {mosque.description || "This mosque profile is managed live by the operations team and community panel."}
-                </p>
+                {/* Location Row */}
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <MapPin className="h-4 w-4 text-muted-foreground/70" />
+                  <span>{mosque.address}, {mosque.city}, {mosque.state} {mosque.zip_code}</span>
+                </div>
+
+                {/* Meta Info Row */}
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  {mosque.capacity && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Users className="h-4 w-4 text-muted-foreground/70" />
+                      Capacity: {mosque.capacity.toLocaleString()}
+                    </span>
+                  )}
+                  {mosque.established_year && (
+                    <span>Est. {mosque.established_year}</span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-shrink-0 flex-col gap-2.5 sm:flex-row lg:flex-col xl:flex-row">
+            {/* Action Buttons */}
+            <div className="flex flex-shrink-0 items-center gap-2">
               <Button
                 onClick={openDirections}
-                size="lg"
-                className="h-11 gap-2.5 rounded-xl px-5 shadow-lg shadow-primary/20 transition-all hover:shadow-xl hover:shadow-primary/25"
+                className="h-10 gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
                 <Navigation className="h-4 w-4" />
                 Get Directions
@@ -205,8 +193,7 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
               <Button
                 onClick={handleShare}
                 variant="outline"
-                size="lg"
-                className="h-11 gap-2.5 rounded-xl border-border/60 px-5 transition-all hover:bg-muted/50"
+                className="h-10 gap-2 rounded-lg border-border bg-white px-5 text-sm font-medium text-foreground hover:bg-muted/50"
               >
                 <Share2 className="h-4 w-4" />
                 Share
@@ -216,18 +203,68 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8 lg:py-10">
-        <div className="mb-10 grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
-          <StatCard label="Active Imams" value={stats.activeImams} tone="primary" />
-          <StatCard label="Live Programs" value={stats.livePrograms} tone="sky" />
-          <StatCard label="Community Posts" value={stats.communityPosts} tone="emerald" />
-          <StatCard label="Completed Donations" value={stats.completedDonations} tone="amber" />
-        </div>
+      {/* Main Content */}
+      <div className="mx-auto max-w-6xl px-4 py-8 lg:px-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {/* Left Column - Main Content */}
+          <div className="space-y-5">
+            {/* About Card */}
+            <Card className="rounded-xl border-border/50 bg-white shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold text-foreground">About</h2>
+                <p className="mt-3 leading-relaxed text-muted-foreground">
+                  {mosque.description || "A welcoming community mosque serving the heart of the area with daily prayers, educational programs, and community services."}
+                </p>
+              </CardContent>
+            </Card>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_360px]">
-          <div className="space-y-6">
+            {/* Facilities Card */}
+            <Card className="rounded-xl border-border/50 bg-white shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold text-foreground">Facilities</h2>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(mosque.facilities ?? []).length > 0 ? (
+                    mosque.facilities?.map((facility) => (
+                      <Badge
+                        key={facility}
+                        variant="outline"
+                        className="rounded-lg border-border bg-white px-3 py-1.5 text-sm font-normal text-foreground"
+                      >
+                        {facility}
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Facilities will appear here once they are added.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Location Card */}
+            <Card className="rounded-xl border-border/50 bg-white shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold text-foreground">Location</h2>
+                <div className="mt-4 overflow-hidden rounded-xl bg-[#f5f0e6]">
+                  <div className="flex h-56 flex-col items-center justify-center p-6 text-center">
+                    <MapPin className="mb-3 h-8 w-8 text-muted-foreground/60" strokeWidth={1.5} />
+                    <p className="font-medium text-foreground">{mosque.address}</p>
+                    <p className="text-muted-foreground">{mosque.city}, {mosque.state} {mosque.zip_code}</p>
+                    <a
+                      href={directionsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 text-sm font-medium text-primary hover:underline"
+                    >
+                      Open in Google Maps
+                    </a>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Hidden tabs for additional content */}
             <Tabs defaultValue="overview" className="w-full">
-              <div className="sticky top-[64px] z-20 -mx-4 overflow-x-auto border-b border-border/50 bg-background/90 px-4 pb-2 pt-1 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-muted/30 sm:p-2 lg:static">
+              <div className="hidden">
                 <TabsList className="inline-flex h-auto min-w-full gap-1 bg-transparent p-0 sm:min-w-0">
                   <PrimaryTab value="overview" label="Overview" />
                   <PrimaryTab value="people" label="People" />
@@ -237,7 +274,7 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                 </TabsList>
               </div>
 
-              <TabsContent value="overview" className="mt-6">
+              <TabsContent value="overview" className="mt-0">
                 <Tabs defaultValue="about" className="space-y-6">
                   <SubTabList>
                     <TabsTrigger value="about">About</TabsTrigger>
@@ -245,115 +282,63 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                     <TabsTrigger value="visit">Visit & Map</TabsTrigger>
                   </SubTabList>
 
-                  <TabsContent value="about" className="space-y-4">
-                    <Card className="overflow-hidden rounded-2xl border-border/40">
-                      <CardHeader className="px-5 py-4">
-                        <CardTitle className="flex items-center gap-2.5 text-base font-bold">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                            <Building2 className="h-4 w-4 text-primary" />
-                          </div>
-                          About This Mosque
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-5 px-5 pb-5 pt-0">
-                        <p className="leading-relaxed text-muted-foreground">
-                          {mosque.description || "A welcoming mosque serving the community with daily worship, programming, and pastoral care."}
-                        </p>
-
-                        <div>
-                          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Facilities
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {(mosque.facilities ?? []).length > 0 ? (
-                              mosque.facilities?.map((facility) => (
-                                <Badge
-                                  key={facility}
-                                  variant="secondary"
-                                  className="rounded-lg border-0 bg-muted/60 px-3 py-1.5 text-xs font-medium"
-                                >
-                                  {facility}
-                                </Badge>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground">Facilities will appear here once they are added.</p>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                  <TabsContent value="about" className="hidden space-y-4">
+                    {/* Content moved to cards above */}
                   </TabsContent>
 
                   <TabsContent value="prayer" className="space-y-4">
-                    <Card className="overflow-hidden rounded-2xl border-border/40">
-                      <CardHeader className="flex flex-row items-start justify-between gap-4 px-5 py-4">
-                        <div>
-                          <CardTitle className="flex items-center gap-2.5 text-base font-bold">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                              <Clock className="h-4 w-4 text-primary" />
-                            </div>
-                            Prayer Schedule
-                          </CardTitle>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {prayerDateLabel
-                              ? prayerDateIsToday
-                                ? `Today's posted timetable for ${prayerDateLabel}`
-                                : `Latest available timetable for ${prayerDateLabel}`
-                              : "Prayer times have not been published yet."}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" className="rounded-lg" asChild>
-                          <Link href="/prayer-times">Full Times</Link>
-                        </Button>
-                      </CardHeader>
-                      <CardContent className="px-5 pb-5 pt-0">
-                        {prayerTimes ? (
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
-                            <PrayerTimeCard label="Sunrise" adhan={prayerTimes.sunrise} />
-                            <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
-                            <PrayerTimeCard label="Asr" adhan={prayerTimes.asr_adhan} iqama={prayerTimes.asr_iqama} />
-                            <PrayerTimeCard label="Maghrib" adhan={prayerTimes.maghrib_adhan} iqama={prayerTimes.maghrib_iqama} />
-                            <PrayerTimeCard label="Isha" adhan={prayerTimes.isha_adhan} iqama={prayerTimes.isha_iqama} />
-                            {prayerTimes.jummah_time ? (
-                              <PrayerTimeCard
-                                label="Jummah"
-                                adhan={prayerTimes.jummah_time}
-                                iqama={prayerTimes.jummah_iqama}
-                                className="sm:col-span-2"
-                              />
-                            ) : null}
+                    <Card className="rounded-xl border-border/50 bg-white shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h2 className="text-lg font-semibold text-foreground">Prayer Schedule</h2>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {prayerDateLabel
+                                ? prayerDateIsToday
+                                  ? `Today's posted timetable for ${prayerDateLabel}`
+                                  : `Latest available timetable for ${prayerDateLabel}`
+                                : "Prayer times have not been published yet."}
+                            </p>
                           </div>
-                        ) : (
-                          <EmptyState
-                            title="No prayer schedule published"
-                            description="The mosque team has not posted prayer times yet."
-                          />
-                        )}
+                          <Button variant="outline" size="sm" className="rounded-lg border-border" asChild>
+                            <Link href="/prayer-times">Full Times</Link>
+                          </Button>
+                        </div>
+                        <div className="mt-5">
+                          {prayerTimes ? (
+                            <div className="space-y-0">
+                              <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
+                              <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
+                              <PrayerTimeCard label="Asr" adhan={prayerTimes.asr_adhan} iqama={prayerTimes.asr_iqama} />
+                              <PrayerTimeCard label="Maghrib" adhan={prayerTimes.maghrib_adhan} iqama={prayerTimes.maghrib_iqama} />
+                              <PrayerTimeCard label="Isha" adhan={prayerTimes.isha_adhan} iqama={prayerTimes.isha_iqama} />
+                              {prayerTimes.jummah_time && (
+                                <>
+                                  <Separator className="my-3" />
+                                  <PrayerTimeCard
+                                    label="Jummah"
+                                    adhan={prayerTimes.jummah_time}
+                                    iqama={prayerTimes.jummah_iqama}
+                                  />
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <EmptyState
+                              title="No prayer schedule published"
+                              description="The mosque team has not posted prayer times yet."
+                            />
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="visit" className="space-y-4">
-                    <Card className="overflow-hidden rounded-2xl border-border/40">
-                      <CardHeader className="px-5 py-4">
-                        <CardTitle className="flex items-center gap-2.5 text-base font-bold">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-                            <MapPin className="h-4 w-4 text-primary" />
-                          </div>
-                          Visit & Directions
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-5 px-5 pb-5 pt-0">
-                        <div className="overflow-hidden rounded-xl border border-border/40">
-                          <iframe
-                            title={`Map for ${mosque.name}`}
-                            src={mapEmbedUrl}
-                            className="h-64 w-full sm:h-72"
-                            loading="lazy"
-                            referrerPolicy="no-referrer-when-downgrade"
-                          />
-                        </div>
+                  <TabsContent value="visit" className="hidden space-y-4">
+                    {/* Content moved to Location card above */}
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
 
                         <div className="grid gap-3 md:grid-cols-2">
                           <InfoRow label="Address" value={`${mosque.address}, ${mosque.city}, ${mosque.state}${mosque.zip_code ? ` ${mosque.zip_code}` : ""}`} />
