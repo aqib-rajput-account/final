@@ -54,10 +54,26 @@ export async function resolveAdminSession(
     return null;
   }
 
+  const role = normalizeRole(data.role);
+  let mosqueId = role === "imam" ? null : data.mosque_id ?? null;
+
+  if (role === "imam") {
+    const { data: imamAppointment } = await supabase
+      .from("imams")
+      .select("mosque_id")
+      .eq("profile_id", userId)
+      .eq("is_active", true)
+      .order("appointed_date", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    mosqueId = imamAppointment?.mosque_id ?? null;
+  }
+
   return {
     userId,
-    role: normalizeRole(data.role),
-    mosqueId: data.mosque_id ?? null,
+    role,
+    mosqueId,
   };
 }
 

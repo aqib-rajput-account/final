@@ -33,13 +33,16 @@ CREATE TABLE IF NOT EXISTS public.admin_settings (
     "shuraReadAccess": true
   }'::jsonb,
   shura_permissions JSONB NOT NULL DEFAULT '{
-    "mosques": { "read": true, "create": false, "update": false, "delete": false },
-    "prayer_times": { "read": true, "create": false, "update": false, "delete": false },
-    "events": { "read": true, "create": false, "update": false, "delete": false },
-    "announcements": { "read": true, "create": false, "update": false, "delete": false },
-    "imams": { "read": true, "create": false, "update": false, "delete": false },
-    "donations": { "read": false, "create": false, "update": false, "delete": false },
-    "posts": { "read": true, "create": false, "update": false, "delete": false },
+    "mosques": { "read": true, "create": true, "update": true, "delete": false },
+    "prayer_times": { "read": true, "create": true, "update": true, "delete": true },
+    "events": { "read": true, "create": true, "update": true, "delete": true },
+    "announcements": { "read": true, "create": true, "update": true, "delete": true },
+    "imams": { "read": true, "create": true, "update": true, "delete": true },
+    "management_teams": { "read": true, "create": true, "update": true, "delete": true },
+    "management_team_members": { "read": true, "create": true, "update": true, "delete": true },
+    "mosque_tasks": { "read": true, "create": true, "update": true, "delete": true },
+    "donations": { "read": true, "create": false, "update": true, "delete": false },
+    "posts": { "read": true, "create": true, "update": true, "delete": true },
     "profiles": { "read": false, "create": false, "update": false, "delete": false },
     "settings": { "read": false, "create": false, "update": false, "delete": false }
   }'::jsonb,

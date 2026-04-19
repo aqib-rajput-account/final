@@ -43,19 +43,36 @@ const readonlyPermission = (): ShuraEntityPermission => ({
   delete: false,
 });
 
+const managedPermission = (): ShuraEntityPermission => ({
+  read: true,
+  create: true,
+  update: true,
+  delete: true,
+});
+
+const managedWithoutDeletePermission = (): ShuraEntityPermission => ({
+  read: true,
+  create: true,
+  update: true,
+  delete: false,
+});
+
 export const DEFAULT_SHURA_PERMISSIONS: ShuraPermissionMap = {
-  mosques: readonlyPermission(),
-  prayer_times: readonlyPermission(),
-  events: readonlyPermission(),
-  announcements: readonlyPermission(),
-  imams: readonlyPermission(),
+  mosques: managedWithoutDeletePermission(),
+  prayer_times: managedPermission(),
+  events: managedPermission(),
+  announcements: managedPermission(),
+  imams: managedPermission(),
+  management_teams: managedPermission(),
+  management_team_members: managedPermission(),
+  mosque_tasks: managedPermission(),
   donations: {
-    read: false,
+    read: true,
     create: false,
-    update: false,
+    update: true,
     delete: false,
   },
-  posts: readonlyPermission(),
+  posts: managedPermission(),
   profiles: {
     read: false,
     create: false,

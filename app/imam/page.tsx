@@ -5,12 +5,14 @@ import Link from "next/link";
 import {
   Activity,
   BellRing,
+  BriefcaseBusiness,
   BookOpen,
   Building2,
   Calendar,
   Clock3,
   Database,
   DollarSign,
+  ListTodo,
   Loader2,
   MessageSquare,
   Users,
@@ -161,9 +163,21 @@ export default function ImamDashboardPage() {
     },
     {
       href: "/imam/imams",
-      label: "Imam Team",
-      description: "Manage leadership records and imam-facing profiles.",
+      label: "Leadership",
+      description: "Manage imam appointments, leadership bios, and active assignments.",
       icon: Users,
+    },
+    {
+      href: "/imam/team",
+      label: "Operations Team",
+      description: "Build the working team that operates under your mosque leadership.",
+      icon: BriefcaseBusiness,
+    },
+    {
+      href: "/imam/tasks",
+      label: "Task Board",
+      description: "Assign work, track status, and keep your mosque team accountable.",
+      icon: ListTodo,
     },
     {
       href: "/imam/community",
@@ -200,12 +214,12 @@ export default function ImamDashboardPage() {
             </Badge>
           </div>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">
-            {mosqueName ? `${mosqueName}` : "Imam Dashboard"}
+            {mosqueName ? `${mosqueName}` : "Imam Appointment Pending"}
           </h1>
           <p className="text-muted-foreground">
-            Manage your mosque&apos;s live settings, prayer schedule, announcements,
-            events, leadership records, community posts, and donations from one
-            dedicated workspace.
+            {mosqueName
+              ? "Manage your appointed mosque's live settings, prayer schedule, announcements, leadership records, operations teams, community posts, donations, and staff tasks from one dedicated workspace."
+              : "This panel activates once your imam profile has an active mosque appointment. As soon as the appointment is live, your control center, team board, and tasks will scope automatically to that mosque."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -282,7 +296,7 @@ export default function ImamDashboardPage() {
             <CardTitle>Imam Workflows</CardTitle>
             <CardDescription>
               Every link below opens a mosque-scoped surface, so you only manage
-              records connected to your own mosque.
+              records connected to the mosque where you are actively appointed.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">

@@ -1,10 +1,10 @@
 import { AdminControlCenter } from "@/components/admin/admin-control-center";
 
-export default function ImamControlCenterPage() {
+export default function ShuraControlCenterPage() {
   return (
     <AdminControlCenter
-      title="Imam Control Center"
-      description="Manage your mosque's live profile, prayer schedule, events, announcements, team records, community posts, and donations from one mosque-scoped workspace."
+      title="Shura Control Center"
+      description="Operate across all mosques, dispatch teams, monitor progress, and manage the network-wide mosque workflow in real time."
       allowedEntityKeys={[
         "mosques",
         "prayer_times",
@@ -14,8 +14,8 @@ export default function ImamControlCenterPage() {
         "management_teams",
         "management_team_members",
         "mosque_tasks",
-        "posts",
         "donations",
+        "posts",
       ]}
       initialEntityKey="mosques"
     />

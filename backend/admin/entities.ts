@@ -40,6 +40,31 @@ const languageOptions = [
   { value: "ms", label: "Malay" },
 ];
 
+const managementTeamTypeOptions = [
+  { value: "operations", label: "Operations" },
+  { value: "facilities", label: "Facilities" },
+  { value: "education", label: "Education" },
+  { value: "outreach", label: "Outreach" },
+  { value: "youth", label: "Youth" },
+  { value: "finance", label: "Finance" },
+  { value: "security", label: "Security" },
+];
+
+const taskPriorityOptions = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
+
+const taskStatusOptions = [
+  { value: "todo", label: "To Do" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
 export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinition> = {
   mosques: {
     key: "mosques",
@@ -54,8 +79,8 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     lookupKeys: [],
     permissions: {
       read: ["imam", "shura", "admin", "super_admin"],
-      create: ["admin", "super_admin"],
-      update: ["imam", "admin", "super_admin"],
+      create: ["shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
       delete: ["super_admin"],
     },
     formFields: [
@@ -97,9 +122,9 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     lookupKeys: ["mosques"],
     permissions: {
       read: ["imam", "shura", "admin", "super_admin"],
-      create: ["imam", "admin", "super_admin"],
-      update: ["imam", "admin", "super_admin"],
-      delete: ["imam", "admin", "super_admin"],
+      create: ["imam", "shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
     },
     formFields: [
       {
@@ -140,7 +165,7 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
       read: ["imam", "shura", "admin", "super_admin"],
       create: ["imam", "shura", "admin", "super_admin"],
       update: ["imam", "shura", "admin", "super_admin"],
-      delete: ["imam", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
     },
     formFields: [
       {
@@ -190,7 +215,7 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
       read: ["imam", "shura", "admin", "super_admin"],
       create: ["imam", "shura", "admin", "super_admin"],
       update: ["imam", "shura", "admin", "super_admin"],
-      delete: ["imam", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
     },
     formFields: [
       {
@@ -228,14 +253,20 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     listFields: ["name", "mosque_id", "title", "experience_years", "is_active"],
     searchColumns: ["name", "title", "bio", "education"],
     searchPlaceholder: "Search imams by name, title, or biography",
-    lookupKeys: ["mosques"],
+    lookupKeys: ["mosques", "profiles"],
     permissions: {
       read: ["imam", "shura", "admin", "super_admin"],
       create: ["imam", "shura", "admin", "super_admin"],
       update: ["imam", "shura", "admin", "super_admin"],
-      delete: ["admin", "super_admin"],
+      delete: ["shura", "admin", "super_admin"],
     },
     formFields: [
+      {
+        key: "profile_id",
+        label: "Linked Profile",
+        type: "select",
+        lookup: "profiles",
+      },
       {
         key: "mosque_id",
         label: "Mosque",
@@ -256,6 +287,153 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
       { key: "is_active", label: "Active", type: "boolean" },
     ],
   },
+  management_teams: {
+    key: "management_teams",
+    label: "Management Teams",
+    singularLabel: "Management Team",
+    description:
+      "Organize mosque operations teams led by the imam locally or dispatched across mosques by Shura.",
+    table: "management_teams",
+    primaryKey: "id",
+    listFields: ["name", "mosque_id", "team_type", "lead_profile_id", "is_active"],
+    searchColumns: ["name", "description", "team_type"],
+    searchPlaceholder: "Search teams by name, purpose, or type",
+    lookupKeys: ["mosques", "profiles"],
+    permissions: {
+      read: ["imam", "shura", "admin", "super_admin"],
+      create: ["imam", "shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "name", label: "Team Name", type: "text", required: true },
+      {
+        key: "team_type",
+        label: "Team Type",
+        type: "select",
+        required: true,
+        options: managementTeamTypeOptions,
+      },
+      {
+        key: "lead_profile_id",
+        label: "Lead Profile",
+        type: "select",
+        lookup: "profiles",
+      },
+      { key: "description", label: "Description", type: "textarea" },
+      { key: "is_active", label: "Active", type: "boolean" },
+    ],
+  },
+  management_team_members: {
+    key: "management_team_members",
+    label: "Team Members",
+    singularLabel: "Team Member",
+    description:
+      "Assign people under an imam or Shura-managed team and define what they are responsible for.",
+    table: "management_team_members",
+    primaryKey: "id",
+    listFields: ["member_name", "team_id", "role_title", "profile_id", "is_active"],
+    searchColumns: ["member_name", "role_title", "notes"],
+    searchPlaceholder: "Search team members by name, role, or notes",
+    lookupKeys: ["management_teams", "profiles"],
+    permissions: {
+      read: ["imam", "shura", "admin", "super_admin"],
+      create: ["imam", "shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "team_id",
+        label: "Management Team",
+        type: "select",
+        required: true,
+        lookup: "management_teams",
+      },
+      { key: "member_name", label: "Member Name", type: "text", required: true },
+      {
+        key: "profile_id",
+        label: "Linked Profile",
+        type: "select",
+        lookup: "profiles",
+      },
+      { key: "role_title", label: "Role Title", type: "text", required: true },
+      { key: "responsibilities", label: "Responsibilities", type: "tags" },
+      { key: "notes", label: "Notes", type: "textarea" },
+      { key: "is_active", label: "Active", type: "boolean" },
+    ],
+  },
+  mosque_tasks: {
+    key: "mosque_tasks",
+    label: "Mosque Tasks",
+    singularLabel: "Mosque Task",
+    description:
+      "Dispatch, monitor, and complete mosque work across operations, programs, facilities, and compliance.",
+    table: "mosque_tasks",
+    primaryKey: "id",
+    listFields: ["title", "mosque_id", "team_id", "status", "priority", "due_at"],
+    searchColumns: ["title", "description", "task_type"],
+    searchPlaceholder: "Search tasks by title, type, or status details",
+    lookupKeys: ["mosques", "management_teams", "profiles"],
+    permissions: {
+      read: ["imam", "shura", "admin", "super_admin"],
+      create: ["imam", "shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
+    },
+    formFields: [
+      {
+        key: "mosque_id",
+        label: "Mosque",
+        type: "select",
+        required: true,
+        lookup: "mosques",
+      },
+      { key: "title", label: "Title", type: "text", required: true },
+      { key: "description", label: "Description", type: "textarea" },
+      {
+        key: "task_type",
+        label: "Task Type",
+        type: "select",
+        options: managementTeamTypeOptions,
+      },
+      {
+        key: "team_id",
+        label: "Team",
+        type: "select",
+        lookup: "management_teams",
+      },
+      {
+        key: "assigned_to_profile_id",
+        label: "Assigned To",
+        type: "select",
+        lookup: "profiles",
+      },
+      {
+        key: "priority",
+        label: "Priority",
+        type: "select",
+        options: taskPriorityOptions,
+      },
+      {
+        key: "status",
+        label: "Status",
+        type: "select",
+        options: taskStatusOptions,
+      },
+      { key: "due_at", label: "Due At", type: "datetime" },
+      { key: "started_at", label: "Started At", type: "datetime" },
+      { key: "completed_at", label: "Completed At", type: "datetime" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+  },
   donations: {
     key: "donations",
     label: "Donations",
@@ -268,9 +446,9 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     searchPlaceholder: "Search donations by type, transaction ID, or notes",
     lookupKeys: ["mosques"],
     permissions: {
-      read: ["imam", "admin", "super_admin"],
+      read: ["imam", "shura", "admin", "super_admin"],
       create: ["admin", "super_admin"],
-      update: ["imam", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
       delete: ["super_admin"],
     },
     formFields: [
@@ -315,9 +493,9 @@ export const ADMIN_ENTITY_DEFINITIONS: Record<AdminEntityKey, AdminEntityDefinit
     lookupKeys: ["mosques"],
     permissions: {
       read: ["imam", "shura", "admin", "super_admin"],
-      create: ["imam", "admin", "super_admin"],
-      update: ["imam", "admin", "super_admin"],
-      delete: ["imam", "admin", "super_admin"],
+      create: ["imam", "shura", "admin", "super_admin"],
+      update: ["imam", "shura", "admin", "super_admin"],
+      delete: ["imam", "shura", "admin", "super_admin"],
     },
     formFields: [
       { key: "content", label: "Content", type: "textarea", required: true },

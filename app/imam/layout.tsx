@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   BellRing,
+  BriefcaseBusiness,
   BookOpen,
   Building2,
   Calendar,
@@ -16,6 +17,7 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  ListTodo,
   Menu,
   MessageSquare,
   Moon,
@@ -78,10 +80,24 @@ const sidebarItems: ImamSidebarItem[] = [
     alwaysVisible: true,
   },
   {
-    name: "Imam Team",
+    name: "Leadership",
     href: "/imam/imams",
     icon: Users,
     entityKey: "imams",
+    alwaysVisible: true,
+  },
+  {
+    name: "Operations Team",
+    href: "/imam/team",
+    icon: BriefcaseBusiness,
+    entityKey: "management_teams",
+    alwaysVisible: true,
+  },
+  {
+    name: "Task Board",
+    href: "/imam/tasks",
+    icon: ListTodo,
+    entityKey: "mosque_tasks",
     alwaysVisible: true,
   },
   {
@@ -174,7 +190,7 @@ function SidebarContent({ pathname }: { pathname: string }) {
               variant="outline"
               className="border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground/80"
             >
-              Live mosque scope
+              Active appointment scope
             </Badge>
           </div>
         ) : null}
