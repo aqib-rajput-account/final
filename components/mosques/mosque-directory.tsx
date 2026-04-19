@@ -245,37 +245,37 @@ export function MosqueDirectory({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="all" className="mt-6 space-y-6">
-          <Card className="border-border/50 shadow-sm">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+        <TabsContent value="all" className="mt-6 space-y-5">
+          <Card className="overflow-hidden rounded-2xl border-border/40">
+            <CardContent className="space-y-4 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors" />
+                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     type="text"
-                    placeholder="Search by mosque name, city, or address..."
+                    placeholder="Search by name, city, or address..."
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    className="h-11 rounded-xl border-border/60 pl-10 pr-10 font-medium"
+                    className="h-10 rounded-lg border-border/50 bg-muted/30 pl-10 pr-10 text-sm placeholder:text-muted-foreground/60 focus:bg-background"
                   />
-                  {searchQuery ? (
+                  {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 transition-colors hover:text-foreground"
                       aria-label="Clear search"
                     >
                       <X className="h-4 w-4" />
                     </button>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="h-11 w-[150px] rounded-xl border-border/60 font-bold text-xs uppercase tracking-widest">
-                      <SelectValue placeholder="Sort by" />
+                    <SelectTrigger className="h-10 w-[130px] rounded-lg border-border/50 bg-muted/30 text-sm font-medium">
+                      <SelectValue placeholder="Sort" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="rounded-lg">
                       <SelectItem value="name">Name</SelectItem>
                       <SelectItem value="capacity">Capacity</SelectItem>
                       <SelectItem value="established">Established</SelectItem>
@@ -286,24 +286,24 @@ export function MosqueDirectory({
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-11 gap-2 rounded-xl border-border/60 font-bold text-xs uppercase tracking-widest"
+                        className="h-10 gap-2 rounded-lg border-border/50 bg-muted/30 text-sm font-medium"
                       >
                         <Filter className="h-4 w-4" />
                         Facilities
-                        {selectedFacilities.length > 0 ? (
-                          <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary">
+                        {selectedFacilities.length > 0 && (
+                          <Badge className="ml-1 h-5 min-w-5 rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
                             {selectedFacilities.length}
                           </Badge>
-                        ) : null}
+                        )}
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto rounded-xl">
+                    <DropdownMenuContent align="end" className="max-h-72 w-52 overflow-y-auto rounded-lg">
                       {allFacilities.map((facility) => (
                         <DropdownMenuCheckboxItem
                           key={facility}
                           checked={selectedFacilities.includes(facility)}
                           onCheckedChange={() => toggleFacility(facility)}
-                          className="m-1 rounded-lg font-medium"
+                          className="rounded-md text-sm"
                         >
                           {facility}
                         </DropdownMenuCheckboxItem>
@@ -311,11 +311,11 @@ export function MosqueDirectory({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  <div className="flex items-center rounded-xl border border-border/60 bg-muted/30 p-1">
+                  <div className="flex items-center rounded-lg bg-muted/50 p-0.5">
                     <Button
                       variant={viewMode === "grid" ? "secondary" : "ghost"}
                       size="icon"
-                      className="h-9 w-9 rounded-lg"
+                      className="h-8 w-8 rounded-md"
                       onClick={() => setViewMode("grid")}
                     >
                       <Grid3X3 className="h-4 w-4" />
@@ -323,7 +323,7 @@ export function MosqueDirectory({
                     <Button
                       variant={viewMode === "list" ? "secondary" : "ghost"}
                       size="icon"
-                      className="h-9 w-9 rounded-lg"
+                      className="h-8 w-8 rounded-md"
                       onClick={() => setViewMode("list")}
                     >
                       <List className="h-4 w-4" />
@@ -332,10 +332,9 @@ export function MosqueDirectory({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Showing {filteredMosques.length} mosque{filteredMosques.length !== 1 ? "s" : ""} from
-                  the live directory
+                  {filteredMosques.length} mosque{filteredMosques.length !== 1 ? "s" : ""} found
                 </p>
 
                 {hasActiveFilters ? (
@@ -574,70 +573,71 @@ export function MosqueDirectory({
 function MosqueCard({ mosque }: { mosque: Mosque }) {
   return (
     <Link href={`/mosques/${mosque.id}`}>
-      <Card className="group h-full overflow-hidden rounded-[2rem] border-border/40 bg-card/50 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
-        <div className="relative h-40 overflow-hidden">
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/30 to-primary/5 transition-transform duration-700 group-hover:scale-110">
-            <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" />
-              <MosqueIcon className="relative h-20 w-20 text-primary/40" />
-            </div>
+      <Card className="group h-full overflow-hidden rounded-2xl border-border/40 bg-card transition-all duration-200 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
+        <div className="relative h-36 overflow-hidden bg-gradient-to-br from-primary/20 via-primary/10 to-transparent">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <MosqueIcon className="h-16 w-16 text-primary/30 transition-transform duration-300 group-hover:scale-110" />
           </div>
-          {mosque.is_verified ? (
-            <div className="absolute right-4 top-4">
-              <Badge className="flex items-center gap-1 rounded-lg border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+          {mosque.is_verified && (
+            <div className="absolute right-3 top-3">
+              <Badge className="flex items-center gap-1 rounded-lg border-0 bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
                 <CheckCircle className="h-3 w-3" />
                 Verified
               </Badge>
             </div>
-          ) : null}
+          )}
         </div>
 
-        <CardContent className="p-6">
-          <h3 className="line-clamp-1 text-xl font-black tracking-tight text-foreground transition-colors group-hover:text-primary">
+        <CardContent className="p-5">
+          <h3 className="line-clamp-1 text-lg font-bold tracking-tight text-foreground transition-colors group-hover:text-primary">
             {mosque.name}
           </h3>
 
-          <div className="mt-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <div className="rounded-lg bg-primary/5 p-1.5 text-primary">
-              <MapPin className="h-3.5 w-3.5" />
-            </div>
+          <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-primary/60" />
             <span className="line-clamp-1">
-              {mosque.address}, {mosque.city}
+              {mosque.city}, {mosque.state}
             </span>
           </div>
 
-          <p className="mt-4 line-clamp-2 text-sm font-medium leading-relaxed text-muted-foreground/80">
-            {mosque.description}
-          </p>
+          {mosque.description && (
+            <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+              {mosque.description}
+            </p>
+          )}
 
-          <div className="mt-6 flex items-center justify-between border-t border-border/40 pt-4">
+          <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-3">
             <div className="flex items-center gap-1.5">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                Open Now
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="text-xs font-medium text-muted-foreground">
+                Active
               </span>
             </div>
-            <Badge variant="secondary" className="rounded-lg bg-muted/40 px-2 text-[10px] font-bold">
-              {(mosque.capacity ?? 0).toLocaleString()} Cap
-            </Badge>
+            {mosque.capacity && (
+              <span className="text-xs font-medium text-muted-foreground">
+                {mosque.capacity.toLocaleString()} capacity
+              </span>
+            )}
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {(mosque.facilities ?? []).slice(0, 3).map((facility) => (
-              <Badge
-                key={facility}
-                variant="outline"
-                className="rounded-md border-border/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70"
-              >
-                {facility}
-              </Badge>
-            ))}
-            {(mosque.facilities ?? []).length > 3 ? (
-              <Badge variant="outline" className="border-primary/20 text-[10px] font-bold text-primary/60">
-                +{(mosque.facilities ?? []).length - 3}
-              </Badge>
-            ) : null}
-          </div>
+          {(mosque.facilities ?? []).length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(mosque.facilities ?? []).slice(0, 3).map((facility) => (
+                <Badge
+                  key={facility}
+                  variant="secondary"
+                  className="rounded-md border-0 bg-muted/60 px-2 py-0.5 text-[10px] font-medium"
+                >
+                  {facility}
+                </Badge>
+              ))}
+              {(mosque.facilities ?? []).length > 3 && (
+                <Badge variant="secondary" className="rounded-md border-0 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  +{(mosque.facilities ?? []).length - 3}
+                </Badge>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>
@@ -647,10 +647,10 @@ function MosqueCard({ mosque }: { mosque: Mosque }) {
 function MosqueListItem({ mosque }: { mosque: Mosque }) {
   return (
     <Link href={`/mosques/${mosque.id}`}>
-      <Card className="group overflow-hidden border-border/50 transition-all hover:border-primary/30 hover:shadow-md">
+      <Card className="group overflow-hidden rounded-xl border-border/40 transition-all hover:border-primary/30 hover:shadow-md">
         <CardContent className="flex items-center gap-4 p-4">
-          <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-primary/5">
-            <MosqueIcon className="h-10 w-10 text-primary/40" />
+          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5">
+            <MosqueIcon className="h-8 w-8 text-primary/50" />
           </div>
 
           <div className="min-w-0 flex-1">
@@ -658,41 +658,45 @@ function MosqueListItem({ mosque }: { mosque: Mosque }) {
               <h3 className="font-semibold text-foreground transition-colors group-hover:text-primary">
                 {mosque.name}
               </h3>
-              {mosque.is_verified ? <CheckCircle className="h-4 w-4 text-primary" /> : null}
+              {mosque.is_verified && <CheckCircle className="h-4 w-4 text-emerald-500" />}
             </div>
 
-            <div className="mt-1 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" />
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 text-primary/60" />
                 {mosque.city}, {mosque.state}
               </span>
-              <span className="flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                {mosque.capacity ?? 0} capacity
-              </span>
-              {mosque.phone ? (
-                <span className="flex items-center gap-1">
+              {mosque.capacity && (
+                <span className="inline-flex items-center gap-1">
+                  <Users className="h-3.5 w-3.5" />
+                  {mosque.capacity} capacity
+                </span>
+              )}
+              {mosque.phone && (
+                <span className="inline-flex items-center gap-1">
                   <Phone className="h-3.5 w-3.5" />
                   {mosque.phone}
                 </span>
-              ) : null}
+              )}
             </div>
 
-            <div className="mt-2 flex flex-wrap gap-1">
-              {(mosque.facilities ?? []).slice(0, 5).map((facility) => (
-                <Badge key={facility} variant="outline" className="text-xs font-normal">
-                  {facility}
-                </Badge>
-              ))}
-              {(mosque.facilities ?? []).length > 5 ? (
-                <Badge variant="outline" className="text-xs font-normal">
-                  +{(mosque.facilities ?? []).length - 5}
-                </Badge>
-              ) : null}
-            </div>
+            {(mosque.facilities ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(mosque.facilities ?? []).slice(0, 4).map((facility) => (
+                  <Badge key={facility} variant="secondary" className="rounded-md border-0 bg-muted/60 px-2 py-0.5 text-[10px] font-medium">
+                    {facility}
+                  </Badge>
+                ))}
+                {(mosque.facilities ?? []).length > 4 && (
+                  <Badge variant="secondary" className="rounded-md border-0 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    +{(mosque.facilities ?? []).length - 4}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
 
-          <ChevronRight className="h-5 w-5 text-muted-foreground transition-colors group-hover:text-primary" />
+          <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
         </CardContent>
       </Card>
     </Link>

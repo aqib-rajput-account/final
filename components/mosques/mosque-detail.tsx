@@ -113,87 +113,102 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
   };
 
   return (
-    <div>
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary/10 via-primary/5 to-background">
-        <div className="absolute inset-0 opacity-5">
+    <div className="min-h-screen bg-background">
+      <div className="relative overflow-hidden border-b border-border/40 bg-gradient-to-b from-primary/8 via-primary/4 to-background">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(var(--primary-rgb,26,127,90),0.15),transparent)]" />
+        <div className="absolute inset-0 opacity-[0.03]">
           <svg className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <pattern id="public-mosque-pattern" x="0" y="0" width="56" height="56" patternUnits="userSpaceOnUse">
-                <path d="M28 0L56 28L28 56L0 28Z" fill="none" stroke="currentColor" strokeWidth="1" />
+              <pattern id="public-mosque-pattern" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M20 0L40 20L20 40L0 20Z" fill="none" stroke="currentColor" strokeWidth="0.5" />
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill="url(#public-mosque-pattern)" />
           </svg>
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 py-6 lg:px-8 lg:py-10">
           <Link
             href="/mosques"
-            className="group mb-8 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70 transition-colors hover:text-primary"
+            className="group mb-6 inline-flex items-center gap-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <div className="rounded-lg bg-muted p-1 transition-colors group-hover:bg-primary/10">
-              <ChevronLeft className="h-4 w-4" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background/80 shadow-sm transition-all group-hover:border-primary/30 group-hover:bg-primary/5">
+              <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
             </div>
-            Back to Directory
+            <span>Back to Directory</span>
           </Link>
 
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-primary text-primary-foreground shadow-2xl shadow-primary/20">
-                <MosqueIcon className="h-12 w-12" />
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+              <div className="relative flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xl shadow-primary/25 sm:h-24 sm:w-24 sm:rounded-3xl">
+                <MosqueIcon className="h-10 w-10 sm:h-12 sm:w-12" />
+                {mosque.is_verified && (
+                  <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-emerald-500 text-white shadow-lg">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </div>
+                )}
               </div>
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
-                    {mosque.name}
-                  </h1>
-                  {mosque.is_verified ? (
-                    <Badge className="w-fit gap-1.5 rounded-full border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Verified
-                    </Badge>
-                  ) : null}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl lg:text-4xl">
+                      {mosque.name}
+                    </h1>
+                    {mosque.is_verified && (
+                      <Badge className="hidden gap-1.5 rounded-full border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 sm:inline-flex dark:text-emerald-400">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Verified
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-primary" />
+                      {mosque.address}, {mosque.city}, {mosque.state}
+                    </span>
+                    {mosque.established_year && (
+                      <>
+                        <span className="text-border">|</span>
+                        <span className="font-medium text-foreground/70">
+                          Est. {mosque.established_year}
+                        </span>
+                      </>
+                    )}
+                    {mosque.capacity && (
+                      <>
+                        <span className="text-border">|</span>
+                        <span className="inline-flex items-center gap-1 font-medium text-foreground/70">
+                          <Users className="h-3.5 w-3.5" />
+                          {mosque.capacity.toLocaleString()}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-muted-foreground">
-                  <span className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-primary/70" />
-                    {mosque.address}, {mosque.city}, {mosque.state}
-                  </span>
-                  {mosque.established_year ? (
-                    <span className="rounded-xl border border-border/50 bg-background/60 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-foreground/80">
-                      Est. {mosque.established_year}
-                    </span>
-                  ) : null}
-                  {mosque.capacity ? (
-                    <span className="rounded-xl border border-border/50 bg-background/60 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-foreground/80">
-                      {mosque.capacity.toLocaleString()} Capacity
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
                   {mosque.description || "This mosque profile is managed live by the operations team and community panel."}
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-shrink-0 flex-col gap-2.5 sm:flex-row lg:flex-col xl:flex-row">
               <Button
                 onClick={openDirections}
                 size="lg"
-                className="h-12 gap-3 rounded-2xl px-6 shadow-xl shadow-primary/20"
+                className="h-11 gap-2.5 rounded-xl px-5 shadow-lg shadow-primary/20 transition-all hover:shadow-xl hover:shadow-primary/25"
               >
-                <Navigation className="h-5 w-5" />
+                <Navigation className="h-4 w-4" />
                 Get Directions
               </Button>
               <Button
                 onClick={handleShare}
                 variant="outline"
                 size="lg"
-                className="h-12 gap-3 rounded-2xl px-6"
+                className="h-11 gap-2.5 rounded-xl border-border/60 px-5 transition-all hover:bg-muted/50"
               >
-                <Share2 className="h-5 w-5" />
+                <Share2 className="h-4 w-4" />
                 Share
               </Button>
             </div>
@@ -201,8 +216,8 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8 lg:py-10">
+        <div className="mb-10 grid gap-3 sm:grid-cols-2 lg:gap-4 xl:grid-cols-4">
           <StatCard label="Active Imams" value={stats.activeImams} tone="primary" />
           <StatCard label="Live Programs" value={stats.livePrograms} tone="sky" />
           <StatCard label="Community Posts" value={stats.communityPosts} tone="emerald" />
@@ -230,21 +245,23 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                     <TabsTrigger value="visit">Visit & Map</TabsTrigger>
                   </SubTabList>
 
-                  <TabsContent value="about" className="space-y-6">
-                    <Card className="rounded-3xl border-border/50">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg font-black">
-                          <Building2 className="h-5 w-5 text-primary" />
+                  <TabsContent value="about" className="space-y-4">
+                    <Card className="overflow-hidden rounded-2xl border-border/40">
+                      <CardHeader className="px-5 py-4">
+                        <CardTitle className="flex items-center gap-2.5 text-base font-bold">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                            <Building2 className="h-4 w-4 text-primary" />
+                          </div>
                           About This Mosque
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="space-y-5">
+                      <CardContent className="space-y-5 px-5 pb-5 pt-0">
                         <p className="leading-relaxed text-muted-foreground">
                           {mosque.description || "A welcoming mosque serving the community with daily worship, programming, and pastoral care."}
                         </p>
 
                         <div>
-                          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+                          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             Facilities
                           </p>
                           <div className="flex flex-wrap gap-2">
@@ -253,7 +270,7 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                                 <Badge
                                   key={facility}
                                   variant="secondary"
-                                  className="rounded-xl border border-border/50 bg-muted/40 px-3 py-2 text-xs font-bold"
+                                  className="rounded-lg border-0 bg-muted/60 px-3 py-1.5 text-xs font-medium"
                                 >
                                   {facility}
                                 </Badge>
@@ -267,12 +284,14 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="prayer" className="space-y-6">
-                    <Card className="rounded-3xl border-border/50">
-                      <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <TabsContent value="prayer" className="space-y-4">
+                    <Card className="overflow-hidden rounded-2xl border-border/40">
+                      <CardHeader className="flex flex-row items-start justify-between gap-4 px-5 py-4">
                         <div>
-                          <CardTitle className="flex items-center gap-2 text-lg font-black">
-                            <Clock className="h-5 w-5 text-primary" />
+                          <CardTitle className="flex items-center gap-2.5 text-base font-bold">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                              <Clock className="h-4 w-4 text-primary" />
+                            </div>
                             Prayer Schedule
                           </CardTitle>
                           <p className="mt-2 text-sm text-muted-foreground">
@@ -283,13 +302,13 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                               : "Prayer times have not been published yet."}
                           </p>
                         </div>
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href="/prayer-times">Full Prayer Times</Link>
+                        <Button variant="outline" size="sm" className="rounded-lg" asChild>
+                          <Link href="/prayer-times">Full Times</Link>
                         </Button>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="px-5 pb-5 pt-0">
                         {prayerTimes ? (
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-2 sm:grid-cols-2">
                             <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
                             <PrayerTimeCard label="Sunrise" adhan={prayerTimes.sunrise} />
                             <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
@@ -315,26 +334,28 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="visit" className="space-y-6">
-                    <Card className="overflow-hidden rounded-3xl border-border/50">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg font-black">
-                          <MapPin className="h-5 w-5 text-primary" />
+                  <TabsContent value="visit" className="space-y-4">
+                    <Card className="overflow-hidden rounded-2xl border-border/40">
+                      <CardHeader className="px-5 py-4">
+                        <CardTitle className="flex items-center gap-2.5 text-base font-bold">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                            <MapPin className="h-4 w-4 text-primary" />
+                          </div>
                           Visit & Directions
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="space-y-6">
-                        <div className="overflow-hidden rounded-2xl border border-border/50">
+                      <CardContent className="space-y-5 px-5 pb-5 pt-0">
+                        <div className="overflow-hidden rounded-xl border border-border/40">
                           <iframe
                             title={`Map for ${mosque.name}`}
                             src={mapEmbedUrl}
-                            className="h-72 w-full"
+                            className="h-64 w-full sm:h-72"
                             loading="lazy"
                             referrerPolicy="no-referrer-when-downgrade"
                           />
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-3 md:grid-cols-2">
                           <InfoRow label="Address" value={`${mosque.address}, ${mosque.city}, ${mosque.state}${mosque.zip_code ? ` ${mosque.zip_code}` : ""}`} />
                           <InfoRow label="Country" value={mosque.country} />
                           <InfoRow label="Phone" value={mosque.phone} href={mosque.phone ? `tel:${mosque.phone}` : undefined} />
@@ -633,15 +654,17 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
             </Tabs>
           </div>
 
-          <div className="space-y-6">
-            <Card className="rounded-[2rem] border-border/50 shadow-sm lg:sticky lg:top-[88px]">
-              <CardHeader className="border-b border-border/40 bg-gradient-to-br from-primary to-primary/90 text-primary-foreground">
-                <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight">
-                  <Clock className="h-5 w-5" />
+          <div className="space-y-4">
+            <Card className="overflow-hidden rounded-2xl border-border/40 shadow-sm lg:sticky lg:top-[88px]">
+              <CardHeader className="border-b border-border/30 bg-gradient-to-br from-primary via-primary to-primary/90 px-5 py-4 text-primary-foreground">
+                <CardTitle className="flex items-center gap-2.5 text-lg font-bold tracking-tight">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
+                    <Clock className="h-4 w-4" />
+                  </div>
                   Quick Prayer View
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 p-4">
+              <CardContent className="space-y-2 p-4">
                 {prayerTimes ? (
                   <>
                     <QuickPrayerRow label="Fajr" value={prayerTimes.fajr_iqama || prayerTimes.fajr_adhan} />
@@ -649,27 +672,32 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                     <QuickPrayerRow label="Asr" value={prayerTimes.asr_iqama || prayerTimes.asr_adhan} />
                     <QuickPrayerRow label="Maghrib" value={prayerTimes.maghrib_iqama || prayerTimes.maghrib_adhan} />
                     <QuickPrayerRow label="Isha" value={prayerTimes.isha_iqama || prayerTimes.isha_adhan} />
-                    {prayerTimes.jummah_time ? (
+                    {prayerTimes.jummah_time && (
                       <>
-                        <Separator />
-                        <QuickPrayerRow label="Jummah" value={prayerTimes.jummah_iqama || prayerTimes.jummah_time} />
+                        <Separator className="my-2" />
+                        <QuickPrayerRow label="Jummah" value={prayerTimes.jummah_iqama || prayerTimes.jummah_time} highlight />
                       </>
-                    ) : null}
+                    )}
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Prayer times have not been published yet.</p>
+                  <div className="rounded-xl bg-muted/50 px-4 py-6 text-center">
+                    <Clock className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">Prayer times have not been published yet.</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="rounded-3xl border-border/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-black">
-                  <ShieldCheck className="h-5 w-5 text-primary" />
+            <Card className="overflow-hidden rounded-2xl border-border/40">
+              <CardHeader className="px-5 py-4">
+                <CardTitle className="flex items-center gap-2.5 text-base font-bold">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                  </div>
                   Contact & Access
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2 px-5 pb-5 pt-0">
                 <ContactAction
                   icon={Phone}
                   label="Phone"
@@ -698,23 +726,24 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
               </CardContent>
             </Card>
 
-            <Card className="rounded-3xl border-border/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-black">
-                  <Bell className="h-5 w-5 text-primary" />
-                  Live With Management Panels
+            <Card className="overflow-hidden rounded-2xl border-border/40">
+              <CardHeader className="px-5 py-4">
+                <CardTitle className="flex items-center gap-2.5 text-base font-bold">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                    <Bell className="h-4 w-4 text-primary" />
+                  </div>
+                  Live Management
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  Events, announcements, imam assignments, and mosque profile updates shown here are pulled
-                  from the same live records managed in the Admin, Shura, and Imam panels.
+              <CardContent className="space-y-4 px-5 pb-5 pt-0">
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Events, announcements, and updates are synced live from the management panels.
                 </p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   <MiniMetric label="Announcements" value={announcements.length} />
-                  <MiniMetric label="Upcoming Events" value={events.length} />
-                  <MiniMetric label="Active Teams" value={managementTeams.filter((team) => team.is_active).length} />
-                  <MiniMetric label="Recent Posts" value={recentPosts.length} />
+                  <MiniMetric label="Events" value={events.length} />
+                  <MiniMetric label="Teams" value={managementTeams.filter((team) => team.is_active).length} />
+                  <MiniMetric label="Posts" value={recentPosts.length} />
                 </div>
               </CardContent>
             </Card>
@@ -729,7 +758,7 @@ function PrimaryTab({ value, label }: { value: string; label: string }) {
   return (
     <TabsTrigger
       value={value}
-      className="rounded-xl px-4 py-2.5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm"
+      className="rounded-lg px-4 py-2 text-sm font-semibold transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
     >
       {label}
     </TabsTrigger>
@@ -738,7 +767,7 @@ function PrimaryTab({ value, label }: { value: string; label: string }) {
 
 function SubTabList({ children }: { children: ReactNode }) {
   return (
-    <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-2xl bg-muted/40 p-1.5">
+    <TabsList className="flex h-auto flex-wrap justify-start gap-1.5 rounded-xl bg-muted/50 p-1">
       {children}
     </TabsList>
   );
@@ -753,24 +782,40 @@ function StatCard({
   value: number;
   tone: "primary" | "sky" | "emerald" | "amber";
 }) {
-  const toneClass =
-    tone === "sky"
-      ? "bg-sky-500/10 text-sky-600"
-      : tone === "emerald"
-        ? "bg-emerald-500/10 text-emerald-600"
-        : tone === "amber"
-          ? "bg-amber-500/10 text-amber-600"
-          : "bg-primary/10 text-primary";
+  const config = {
+    primary: {
+      bg: "bg-primary/8",
+      text: "text-primary",
+      border: "border-primary/20",
+    },
+    sky: {
+      bg: "bg-sky-500/8",
+      text: "text-sky-600 dark:text-sky-400",
+      border: "border-sky-500/20",
+    },
+    emerald: {
+      bg: "bg-emerald-500/8",
+      text: "text-emerald-600 dark:text-emerald-400",
+      border: "border-emerald-500/20",
+    },
+    amber: {
+      bg: "bg-amber-500/8",
+      text: "text-amber-600 dark:text-amber-400",
+      border: "border-amber-500/20",
+    },
+  };
+
+  const { bg, text, border } = config[tone];
 
   return (
-    <Card className="rounded-3xl border-border/50">
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-          <p className="mt-2 text-3xl font-black tracking-tight">{value}</p>
+    <Card className={cn("overflow-hidden rounded-2xl border-border/40 transition-all hover:border-border/60 hover:shadow-md", border)}>
+      <CardContent className="flex items-center justify-between p-4 sm:p-5">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+          <p className="text-2xl font-bold tracking-tight sm:text-3xl">{value}</p>
         </div>
-        <div className={cn("rounded-2xl p-3", toneClass)}>
-          <Users className="h-5 w-5" />
+        <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl", bg)}>
+          <Users className={cn("h-5 w-5", text)} />
         </div>
       </CardContent>
     </Card>
@@ -789,12 +834,15 @@ function PrayerTimeCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-2xl border border-border/50 bg-muted/20 p-4", className)}>
-      <div className="flex items-center justify-between gap-4">
-        <p className="font-bold text-foreground">{label}</p>
+    <div className={cn("group relative overflow-hidden rounded-xl border border-border/40 bg-gradient-to-br from-muted/30 to-transparent p-4 transition-all hover:border-primary/30 hover:shadow-sm", className)}>
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+      <div className="relative flex items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold text-foreground">{label}</p>
+          {iqama && <p className="text-xs text-muted-foreground">Iqama at {iqama}</p>}
+        </div>
         <div className="text-right">
-          <p className="font-black tracking-tight text-primary">{adhan || "TBD"}</p>
-          {iqama ? <p className="text-xs text-muted-foreground">Iqama: {iqama}</p> : null}
+          <p className="text-lg font-bold tracking-tight text-primary">{adhan || "TBD"}</p>
         </div>
       </div>
     </div>
@@ -868,15 +916,18 @@ function ContactAction({
   external?: boolean;
 }) {
   const content = (
-    <div className="flex items-center gap-4 rounded-2xl border border-transparent p-4 transition-colors hover:border-border/40 hover:bg-muted/40">
-      <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
+    <div className={cn(
+      "group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all",
+      href ? "cursor-pointer hover:bg-muted/50" : "opacity-60"
+    )}>
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-        <p className="mt-1 truncate font-medium text-foreground">{value}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="truncate text-sm font-medium text-foreground">{value}</p>
       </div>
-      {href ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
+      {href && <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />}
     </div>
   );
 
@@ -891,20 +942,26 @@ function ContactAction({
   );
 }
 
-function QuickPrayerRow({ label, value }: { label: string; value: string | null }) {
+function QuickPrayerRow({ label, value, highlight }: { label: string; value: string | null; highlight?: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-xl bg-muted/20 px-3 py-2">
-      <span className="font-medium text-foreground">{label}</span>
-      <span className="font-black tracking-tight text-primary">{value || "TBD"}</span>
+    <div className={cn(
+      "flex items-center justify-between rounded-lg px-3 py-2.5 transition-colors",
+      highlight ? "bg-primary/10" : "bg-muted/30 hover:bg-muted/50"
+    )}>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className={cn(
+        "text-sm font-bold tracking-tight",
+        highlight ? "text-primary" : "text-foreground"
+      )}>{value || "TBD"}</span>
     </div>
   );
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-border/40 bg-muted/20 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-      <p className="mt-2 text-xl font-black tracking-tight text-foreground">{value}</p>
+    <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-center transition-colors hover:bg-muted/60">
+      <p className="text-lg font-bold tracking-tight text-foreground">{value}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -921,20 +978,20 @@ function InfoRow({
   external?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+    <div className="rounded-xl bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/50">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       {href && value ? (
         <a
           href={href}
           target={external ? "_blank" : undefined}
           rel={external ? "noreferrer" : undefined}
-          className="mt-2 inline-flex items-center gap-2 font-medium text-primary hover:underline"
+          className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
         >
           {value}
-          {external ? <ExternalLink className="h-4 w-4" /> : null}
+          {external && <ExternalLink className="h-3.5 w-3.5" />}
         </a>
       ) : (
-        <p className="mt-2 font-medium text-foreground">{value || "Not available"}</p>
+        <p className="mt-1 text-sm font-medium text-foreground">{value || "Not available"}</p>
       )}
     </div>
   );
@@ -942,13 +999,13 @@ function InfoRow({
 
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
-    <Card className="rounded-3xl border-dashed border-border/60">
-      <CardContent className="py-14 text-center">
-        <Building2 className="mx-auto h-12 w-12 text-muted-foreground/40" />
-        <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
+    <div className="rounded-2xl border border-dashed border-border/50 bg-muted/20 px-6 py-12 text-center">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted/50">
+        <Building2 className="h-6 w-6 text-muted-foreground/60" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+    </div>
   );
 }
 
@@ -1056,12 +1113,14 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="rounded-3xl border-border/50">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
-            <CardTitle className="flex items-center gap-2 text-lg font-black">
-              <Library className="h-5 w-5 text-primary" />
+    <div className="space-y-4">
+      <Card className="overflow-hidden rounded-2xl border-border/40">
+        <CardHeader className="flex flex-col gap-4 border-b border-border/30 bg-muted/20 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2.5 text-lg font-bold">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                <Library className="h-4 w-4 text-primary" />
+              </div>
               Mosque Library & Inventory
             </CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -1070,19 +1129,19 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {usingStarterCatalog ? (
-              <Badge variant="outline" className="rounded-full px-3 py-1">
+            {usingStarterCatalog && (
+              <Badge variant="outline" className="rounded-lg border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-amber-600 dark:text-amber-400">
                 Starter catalog
               </Badge>
-            ) : null}
+            )}
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="rounded-xl gap-2">
+                <Button className="h-10 gap-2 rounded-xl px-4 shadow-sm transition-all hover:shadow-md">
                   <Plus className="h-4 w-4" />
                   Suggest Book
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+              <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden">
                 <DialogHeader>
                   <DialogTitle>Suggest a New Book</DialogTitle>
                   <DialogDescription>
@@ -1090,7 +1149,8 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
+                <div className="max-h-[60vh] overflow-y-auto px-6 py-4">
+                  <div className="grid gap-5">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="suggest-book-title">Title</Label>
@@ -1231,46 +1291,47 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                       />
                     </div>
                   </div>
+                  </div>
                 </div>
 
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  <Button variant="outline" className="rounded-xl" onClick={() => setIsAddDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleAddBook}>Submit Suggestion</Button>
+                  <Button className="rounded-xl" onClick={handleAddBook}>Submit Suggestion</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <LibraryStatCard label="Books" value={books.length} icon={BookMarked} />
           <LibraryStatCard
-            label="Available Copies"
+            label="Available"
             value={books.reduce((sum, book) => sum + book.availableCopies, 0)}
             icon={Library}
           />
-          <LibraryStatCard label="Other Items" value={items.length} icon={Package} />
-          <LibraryStatCard label="Pending Review" value={pendingBooks.length} icon={MessageSquare} />
+          <LibraryStatCard label="Items" value={items.length} icon={Package} />
+          <LibraryStatCard label="Pending" value={pendingBooks.length} icon={MessageSquare} />
         </CardContent>
       </Card>
 
-      <Card className="rounded-3xl border-border/50">
+      <Card className="overflow-hidden rounded-2xl border-border/40">
         <CardContent className="space-y-5 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="inline-flex gap-1 rounded-xl bg-muted/50 p-1">
               <Button
-                variant={activeTab === "books" ? "default" : "outline"}
+                variant={activeTab === "books" ? "default" : "ghost"}
                 size="sm"
-                className="rounded-xl"
+                className="rounded-lg px-4"
                 onClick={() => setActiveTab("books")}
               >
                 Books
               </Button>
               <Button
-                variant={activeTab === "items" ? "default" : "outline"}
+                variant={activeTab === "items" ? "default" : "ghost"}
                 size="sm"
-                className="rounded-xl"
+                className="rounded-lg px-4"
                 onClick={() => setActiveTab("items")}
               >
                 Inventory Items
@@ -1401,19 +1462,23 @@ function LibraryStatCard({
   icon: ElementType;
 }) {
   return (
-    <div className="rounded-2xl border border-border/40 bg-muted/20 p-4 text-center">
-      <Icon className="mx-auto mb-2 h-5 w-5 text-primary" />
-      <p className="text-2xl font-black tracking-tight">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="group flex items-center gap-3 rounded-xl bg-muted/30 p-4 transition-colors hover:bg-muted/50">
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+        <Icon className="h-4 w-4 text-primary" />
+      </div>
+      <div>
+        <p className="text-xl font-bold tracking-tight">{value}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
     </div>
   );
 }
 
 function LibraryMeta({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/40 bg-muted/20 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-      <p className="mt-2 text-sm font-medium text-foreground">{value}</p>
+    <div className="rounded-xl bg-muted/30 px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }
