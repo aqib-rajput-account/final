@@ -2,6 +2,24 @@
 
 This is a Connect Mosque Project of our Community.
 
+## 🎨 UI/UX Design System
+
+The application now features a modernized **Windows panel-style** design system with consistent, professional aesthetics across all components and forms. 
+
+**For Design & Implementation Details**, see:
+- 📖 [Design Documentation Index](./DESIGN_DOCUMENTATION_INDEX.md) - Start here for navigation
+- 🎯 [Implementation Summary](./IMPLEMENTATION_SUMMARY.md) - Executive overview
+- 🛠️ [Design System Guide](./DESIGN_SYSTEM_GUIDE.md) - Developer reference
+- 📊 [Design Updates](./DESIGN_UPDATES.md) - Complete specifications
+- 🔄 [Before & After](./DESIGN_BEFORE_AFTER.md) - Visual comparisons
+
+**Key Features**:
+- ✓ Unified form styling across all dialogs
+- ✓ Modern Windows panel aesthetic
+- ✓ Improved accessibility and usability
+- ✓ Consistent spacing and typography
+- ✓ Professional, cohesive look & feel
+
 ## Clerk Authentication Setup (Sign up + Sign in)
 
 1. **Install dependencies**
