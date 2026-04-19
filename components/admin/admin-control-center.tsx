@@ -622,7 +622,7 @@ export function AdminControlCenter({
 
     if (field.type === "boolean") {
       return (
-        <div className="flex items-center gap-3 rounded-lg border px-3 py-2">
+        <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
           <Switch
             checked={Boolean(value)}
             onCheckedChange={(checked) => updateFormValue(field.key, checked)}
@@ -1097,14 +1097,16 @@ export function AdminControlCenter({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingItemId ? "Edit" : "Create"} {selectedEntity?.singularLabel}
             </DialogTitle>
-            <DialogDescription>{selectedEntity?.description}</DialogDescription>
+            {selectedEntity?.description && (
+              <DialogDescription>{selectedEntity.description}</DialogDescription>
+            )}
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className="space-y-4 py-4">
             {selectedEntity?.formFields.map((field) => (
               <div key={field.key} className="space-y-2">
                 <Label htmlFor={field.key}>{field.label}</Label>
@@ -1126,7 +1128,7 @@ export function AdminControlCenter({
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingItemId ? "Save Changes" : "Create Record"}
             </Button>
           </DialogFooter>

@@ -202,429 +202,407 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Active Imams" value={stats.activeImams} tone="primary" />
-          <StatCard label="Live Programs" value={stats.livePrograms} tone="sky" />
-          <StatCard label="Community Posts" value={stats.communityPosts} tone="emerald" />
-          <StatCard label="Completed Donations" value={stats.completedDonations} tone="amber" />
-        </div>
-
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_360px]">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-6">
-            <Tabs defaultValue="overview" className="w-full">
-              <div className="sticky top-[64px] z-20 -mx-4 overflow-x-auto border-b border-border/50 bg-background/90 px-4 pb-2 pt-1 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:bg-muted/30 sm:p-2 lg:static">
-                <TabsList className="inline-flex h-auto min-w-full gap-1 bg-transparent p-0 sm:min-w-0">
-                  <PrimaryTab value="overview" label="Overview" />
-                  <PrimaryTab value="people" label="People" />
-                  <PrimaryTab value="programs" label="Programs" />
-                  <PrimaryTab value="community" label="Community" />
-                  <PrimaryTab value="library" label="Library" />
+            <Tabs defaultValue="about" className="w-full">
+              <div className="mb-6 rounded-lg bg-muted/30 p-1">
+                <TabsList className="grid h-auto w-full grid-cols-6 gap-1 bg-transparent p-0">
+                  <TabsTrigger value="about" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    About
+                  </TabsTrigger>
+                  <TabsTrigger value="imams" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Imams ({imams.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="management" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Management
+                  </TabsTrigger>
+                  <TabsTrigger value="events" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Events ({events.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="announcements" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Announcements
+                  </TabsTrigger>
+                  <TabsTrigger value="donations" className="rounded-md border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-background">
+                    Donations
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
-              <TabsContent value="overview" className="mt-6">
-                <Tabs defaultValue="about" className="space-y-6">
-                  <SubTabList>
-                    <TabsTrigger value="about">About</TabsTrigger>
-                    <TabsTrigger value="prayer">Prayer Times</TabsTrigger>
-                    <TabsTrigger value="visit">Visit & Map</TabsTrigger>
-                  </SubTabList>
+              <TabsContent value="about" className="mt-6 space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building2 className="h-5 w-5 text-primary" />
+                      About This Mosque
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <p className="leading-relaxed text-muted-foreground">
+                      {mosque.description || "A welcoming mosque serving the community with daily worship, programming, and pastoral care."}
+                    </p>
 
-                  <TabsContent value="about" className="space-y-6">
-                    <Card className="rounded-3xl border-border/50">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg font-black">
-                          <Building2 className="h-5 w-5 text-primary" />
-                          About This Mosque
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-5">
-                        <p className="leading-relaxed text-muted-foreground">
-                          {mosque.description || "A welcoming mosque serving the community with daily worship, programming, and pastoral care."}
-                        </p>
+                    <div>
+                      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Facilities
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(mosque.facilities ?? []).length > 0 ? (
+                          mosque.facilities?.map((facility) => (
+                            <Badge
+                              key={facility}
+                              variant="secondary"
+                              className="rounded-md px-3 py-1 text-xs"
+                            >
+                              {facility}
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Facilities will appear here once they are added.</p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
 
-                        <div>
-                          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
-                            Facilities
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {(mosque.facilities ?? []).length > 0 ? (
-                              mosque.facilities?.map((facility) => (
-                                <Badge
-                                  key={facility}
-                                  variant="secondary"
-                                  className="rounded-xl border border-border/50 bg-muted/40 px-3 py-2 text-xs font-bold"
-                                >
-                                  {facility}
-                                </Badge>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground">Facilities will appear here once they are added.</p>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-primary" />
+                      Prayer Times
+                    </CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {prayerDateLabel
+                        ? prayerDateIsToday
+                          ? `Today's times`
+                          : `Times for ${prayerDateLabel}`
+                        : "Prayer times not yet published"}
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {prayerTimes ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
+                        <PrayerTimeCard label="Sunrise" adhan={prayerTimes.sunrise} />
+                        <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
+                        <PrayerTimeCard label="Asr" adhan={prayerTimes.asr_adhan} iqama={prayerTimes.asr_iqama} />
+                        <PrayerTimeCard label="Maghrib" adhan={prayerTimes.maghrib_adhan} iqama={prayerTimes.maghrib_iqama} />
+                        <PrayerTimeCard label="Isha" adhan={prayerTimes.isha_adhan} iqama={prayerTimes.isha_iqama} />
+                        {prayerTimes.jummah_time ? (
+                          <PrayerTimeCard
+                            label="Jummah"
+                            adhan={prayerTimes.jummah_time}
+                            iqama={prayerTimes.jummah_iqama}
+                            className="sm:col-span-2"
+                          />
+                        ) : null}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        title="No prayer schedule published"
+                        description="The mosque team has not posted prayer times yet."
+                      />
+                    )}
+                  </CardContent>
+                </Card>
 
-                  <TabsContent value="prayer" className="space-y-6">
-                    <Card className="rounded-3xl border-border/50">
-                      <CardHeader className="flex flex-row items-start justify-between gap-4">
-                        <div>
-                          <CardTitle className="flex items-center gap-2 text-lg font-black">
-                            <Clock className="h-5 w-5 text-primary" />
-                            Prayer Schedule
-                          </CardTitle>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {prayerDateLabel
-                              ? prayerDateIsToday
-                                ? `Today's posted timetable for ${prayerDateLabel}`
-                                : `Latest available timetable for ${prayerDateLabel}`
-                              : "Prayer times have not been published yet."}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href="/prayer-times">Full Prayer Times</Link>
-                        </Button>
-                      </CardHeader>
-                      <CardContent>
-                        {prayerTimes ? (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <PrayerTimeCard label="Fajr" adhan={prayerTimes.fajr_adhan} iqama={prayerTimes.fajr_iqama} />
-                            <PrayerTimeCard label="Sunrise" adhan={prayerTimes.sunrise} />
-                            <PrayerTimeCard label="Dhuhr" adhan={prayerTimes.dhuhr_adhan} iqama={prayerTimes.dhuhr_iqama} />
-                            <PrayerTimeCard label="Asr" adhan={prayerTimes.asr_adhan} iqama={prayerTimes.asr_iqama} />
-                            <PrayerTimeCard label="Maghrib" adhan={prayerTimes.maghrib_adhan} iqama={prayerTimes.maghrib_iqama} />
-                            <PrayerTimeCard label="Isha" adhan={prayerTimes.isha_adhan} iqama={prayerTimes.isha_iqama} />
-                            {prayerTimes.jummah_time ? (
-                              <PrayerTimeCard
-                                label="Jummah"
-                                adhan={prayerTimes.jummah_time}
-                                iqama={prayerTimes.jummah_iqama}
-                                className="sm:col-span-2"
-                              />
+                <Card className="overflow-hidden">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-primary" />
+                      Location & Directions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="overflow-hidden rounded-2xl border border-border/50">
+                      <iframe
+                        title={`Map for ${mosque.name}`}
+                        src={mapEmbedUrl}
+                        className="h-72 w-full"
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                      />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <InfoRow label="Address" value={`${mosque.address}, ${mosque.city}, ${mosque.state}${mosque.zip_code ? ` ${mosque.zip_code}` : ""}`} />
+                      <InfoRow label="Country" value={mosque.country} />
+                      <InfoRow label="Phone" value={mosque.phone} href={mosque.phone ? `tel:${mosque.phone}` : undefined} />
+                      <InfoRow label="Email" value={mosque.email} href={mosque.email ? `mailto:${mosque.email}` : undefined} />
+                      <InfoRow
+                        label="Website"
+                        value={mosque.website}
+                        href={mosque.website ? normalizeExternalUrl(mosque.website) : undefined}
+                      />
+                      <InfoRow
+                        label="Directions"
+                        value="Open in Google Maps"
+                        href={directionsUrl}
+                        external
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="imams" className="mt-6 space-y-6">
+                {imams.length === 0 ? (
+                  <EmptyState title="No imam profiles yet" description="The mosque has not published imam profiles yet." />
+                ) : (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {imams.map((imam) => (
+                      <Card key={imam.id} className="overflow-hidden">
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-3">
+                              <p className="text-xs font-medium uppercase tracking-wider text-primary">
+                                {imam.title || "Imam"}
+                              </p>
+                              <h3 className="text-xl font-bold">{imam.name}</h3>
+                              <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                                {imam.bio || "Biography coming soon."}
+                              </p>
+                            </div>
+                            {imam.is_active ? (
+                              <Badge className="rounded-full border-0 bg-emerald-500/15 text-emerald-700 whitespace-nowrap">
+                                Active
+                              </Badge>
                             ) : null}
                           </div>
-                        ) : (
-                          <EmptyState
-                            title="No prayer schedule published"
-                            description="The mosque team has not posted prayer times yet."
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
 
-                  <TabsContent value="visit" className="space-y-6">
-                    <Card className="overflow-hidden rounded-3xl border-border/50">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg font-black">
-                          <MapPin className="h-5 w-5 text-primary" />
-                          Visit & Directions
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-6">
-                        <div className="overflow-hidden rounded-2xl border border-border/50">
-                          <iframe
-                            title={`Map for ${mosque.name}`}
-                            src={mapEmbedUrl}
-                            className="h-72 w-full"
-                            loading="lazy"
-                            referrerPolicy="no-referrer-when-downgrade"
-                          />
-                        </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {(imam.languages ?? []).slice(0, 3).map((language) => (
+                              <Badge key={language} variant="outline" className="rounded-full">
+                                {language}
+                              </Badge>
+                            ))}
+                            {(imam.specializations ?? []).slice(0, 2).map((specialization) => (
+                              <Badge key={specialization} variant="secondary" className="rounded-full">
+                                {specialization}
+                              </Badge>
+                            ))}
+                          </div>
 
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <InfoRow label="Address" value={`${mosque.address}, ${mosque.city}, ${mosque.state}${mosque.zip_code ? ` ${mosque.zip_code}` : ""}`} />
-                          <InfoRow label="Country" value={mosque.country} />
-                          <InfoRow label="Phone" value={mosque.phone} href={mosque.phone ? `tel:${mosque.phone}` : undefined} />
-                          <InfoRow label="Email" value={mosque.email} href={mosque.email ? `mailto:${mosque.email}` : undefined} />
-                          <InfoRow
-                            label="Website"
-                            value={mosque.website}
-                            href={mosque.website ? normalizeExternalUrl(mosque.website) : undefined}
-                          />
-                          <InfoRow
-                            label="Directions"
-                            value="Open in Google Maps"
-                            href={directionsUrl}
-                            external
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
-
-              <TabsContent value="people" className="mt-6">
-                <Tabs defaultValue="imams" className="space-y-6">
-                  <SubTabList>
-                    <TabsTrigger value="imams">Imams</TabsTrigger>
-                    <TabsTrigger value="teams">Teams</TabsTrigger>
-                  </SubTabList>
-
-                  <TabsContent value="imams" className="space-y-6">
-                    {imams.length === 0 ? (
-                      <EmptyState title="No imam profiles yet" description="The mosque has not published imam profiles yet." />
-                    ) : (
-                      <div className="grid gap-6 md:grid-cols-2">
-                        {imams.map((imam) => (
-                          <Card key={imam.id} className="rounded-3xl border-border/50">
-                            <CardContent className="p-6">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
-                                    {imam.title || "Imam"}
-                                  </p>
-                                  <h3 className="mt-2 text-xl font-black tracking-tight">{imam.name}</h3>
-                                  <p className="mt-3 line-clamp-4 text-sm leading-relaxed text-muted-foreground">
-                                    {imam.bio || "Biography coming soon."}
-                                  </p>
-                                </div>
-                                {imam.is_active ? (
-                                  <Badge className="rounded-full border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
-                                    Active
-                                  </Badge>
-                                ) : null}
-                              </div>
-
-                              <div className="mt-5 flex flex-wrap gap-2">
-                                {(imam.languages ?? []).slice(0, 3).map((language) => (
-                                  <Badge key={language} variant="outline" className="rounded-full px-3 py-1">
-                                    {language}
-                                  </Badge>
-                                ))}
-                                {(imam.specializations ?? []).slice(0, 2).map((specialization) => (
-                                  <Badge key={specialization} variant="secondary" className="rounded-full px-3 py-1">
-                                    {specialization}
-                                  </Badge>
-                                ))}
-                              </div>
-
-                              <div className="mt-6 flex flex-wrap gap-3">
-                                <Button asChild className="rounded-xl">
-                                  <Link href={`/mosques/${mosque.id}/imam/${imam.id}`}>View Profile</Link>
-                                </Button>
-                                {imam.email ? (
-                                  <Button variant="outline" asChild className="rounded-xl">
-                                    <a href={`mailto:${imam.email}`}>Email Imam</a>
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                          <div className="mt-6 flex flex-wrap gap-3">
+                            <Button asChild className="rounded-lg">
+                              <Link href={`/mosques/${mosque.id}/imam/${imam.id}`}>View Profile</Link>
+                            </Button>
+                            {imam.email ? (
+                              <Button variant="outline" asChild className="rounded-lg">
+                                <a href={`mailto:${imam.email}`}>Email Imam</a>
+                              </Button>
+                            ) : null}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                       </div>
                     )}
-                  </TabsContent>
-
-                  <TabsContent value="teams" className="space-y-6">
-                    {managementTeams.length === 0 ? (
-                      <EmptyState
-                        title="No management teams published"
-                        description="Management teams will appear here once the mosque operations structure is published."
-                      />
-                    ) : (
-                      <>
-                        <div className="grid gap-6 md:grid-cols-2">
-                          {managementTeams.map((team) => (
-                            <ManagementTeamCard key={team.id} team={team} mosqueId={mosque.id} />
-                          ))}
-                        </div>
-                        <div className="flex justify-end">
-                          <Button variant="outline" asChild className="rounded-xl">
-                            <Link href={`/mosques/${mosque.id}/management`}>View Full Management Directory</Link>
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </TabsContent>
-                </Tabs>
               </TabsContent>
 
-              <TabsContent value="programs" className="mt-6">
-                <Tabs defaultValue="events" className="space-y-6">
-                  <SubTabList>
-                    <TabsTrigger value="events">Events</TabsTrigger>
-                    <TabsTrigger value="announcements">Announcements</TabsTrigger>
-                  </SubTabList>
+              <TabsContent value="management" className="mt-6 space-y-6">
+                {managementTeams.length === 0 ? (
+                  <EmptyState
+                    title="No management teams published"
+                    description="Management teams will appear here once the mosque operations structure is published."
+                  />
+                ) : (
+                  <>
+                    <div className="grid gap-6 md:grid-cols-2">
+                      {managementTeams.map((team) => (
+                        <ManagementTeamCard key={team.id} team={team} mosqueId={mosque.id} />
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="outline" asChild>
+                        <Link href={`/mosques/${mosque.id}/management`}>View Full Management Directory</Link>
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
 
-                  <TabsContent value="events" className="space-y-4">
+              <TabsContent value="events" className="mt-6 space-y-6">
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="mb-4 text-lg font-semibold">Upcoming Events</h3>
                     {events.length === 0 ? (
                       <EmptyState
                         title="No upcoming programs scheduled"
                         description="New events will appear here as soon as the mosque publishes them."
                       />
                     ) : (
-                      events.map((event) => (
-                        <Link key={event.id} href={`/events/${event.id}`}>
-                          <Card className="rounded-3xl border-border/50 transition-colors hover:border-primary/30">
-                            <CardContent className="p-5">
-                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="space-y-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="secondary" className="rounded-full px-3 py-1 capitalize">
-                                      {formatLabel(event.event_type)}
-                                    </Badge>
-                                    {event.is_recurring ? (
-                                      <Badge variant="outline" className="rounded-full px-3 py-1">
-                                        Recurring
+                      <div className="space-y-4">
+                        {events.map((event) => (
+                          <Link key={event.id} href={`/events/${event.id}`}>
+                            <Card className="transition-colors hover:border-primary/30">
+                              <CardContent className="p-5">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="secondary" className="capitalize">
+                                        {formatLabel(event.event_type)}
                                       </Badge>
-                                    ) : null}
+                                      {event.is_recurring ? (
+                                        <Badge variant="outline">
+                                          Recurring
+                                        </Badge>
+                                      ) : null}
+                                    </div>
+                                    <h3 className="text-base font-semibold">{event.title}</h3>
+                                    <p className="text-sm leading-relaxed text-muted-foreground">
+                                      {event.description || "Event details will be shared soon."}
+                                    </p>
                                   </div>
-                                  <h3 className="text-lg font-black tracking-tight">{event.title}</h3>
-                                  <p className="text-sm leading-relaxed text-muted-foreground">
-                                    {event.description || "Event details will be shared soon."}
-                                  </p>
-                                </div>
 
-                                <div className="space-y-2 text-sm text-muted-foreground sm:text-right">
-                                  <p className="font-semibold text-foreground">{formatDate(event.start_date)}</p>
-                                  <p>{formatTime(event.start_date)}</p>
-                                  <p>{event.location || mosque.name}</p>
+                                  <div className="space-y-2 text-sm text-muted-foreground sm:text-right">
+                                    <p className="font-semibold text-foreground">{formatDate(event.start_date)}</p>
+                                    <p>{formatTime(event.start_date)}</p>
+                                    <p>{event.location || mosque.name}</p>
+                                  </div>
                                 </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </Link>
-                      ))
+                              </CardContent>
+                            </Card>
+                          </Link>
+                        ))}
+                      </div>
                     )}
-                  </TabsContent>
+                  </div>
 
-                  <TabsContent value="announcements" className="space-y-4">
+                  <div className="border-t border-border/50 pt-6">
+                    <h3 className="mb-4 text-lg font-semibold">Announcements</h3>
                     {announcements.length === 0 ? (
                       <EmptyState
                         title="No announcements posted"
                         description="The latest notices and updates from the mosque will show here."
                       />
                     ) : (
-                      announcements.map((announcement) => (
-                        <Card key={announcement.id} className="rounded-3xl border-border/50">
-                          <CardContent className="p-5">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      "rounded-full px-3 py-1 capitalize",
-                                      announcementPriorityTone[announcement.priority] ?? announcementPriorityTone.normal
-                                    )}
-                                  >
-                                    {announcement.priority}
-                                  </Badge>
-                                  <span className="text-xs text-muted-foreground">
-                                    {formatDate(announcement.published_at)}
-                                  </span>
+                      <div className="space-y-4">
+                        {announcements.map((announcement) => (
+                          <Card key={announcement.id}>
+                            <CardContent className="p-5">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        "rounded-full px-3 py-1 capitalize",
+                                        announcementPriorityTone[announcement.priority] ?? announcementPriorityTone.normal
+                                      )}
+                                    >
+                                      {announcement.priority}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatDate(announcement.published_at)}
+                                    </span>
+                                  </div>
+                                  <h3 className="text-base font-semibold">{announcement.title}</h3>
+                                  <p className="text-sm leading-relaxed text-muted-foreground">{announcement.content}</p>
                                 </div>
-                                <h3 className="text-lg font-black tracking-tight">{announcement.title}</h3>
-                                <p className="text-sm leading-relaxed text-muted-foreground">{announcement.content}</p>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
                     )}
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                </div>
               </TabsContent>
 
-              <TabsContent value="community" className="mt-6">
-                <Tabs defaultValue="posts" className="space-y-6">
-                  <SubTabList>
-                    <TabsTrigger value="posts">Posts</TabsTrigger>
-                    <TabsTrigger value="donations">Donations</TabsTrigger>
-                  </SubTabList>
-
-                  <TabsContent value="posts" className="space-y-4">
-                    {recentPosts.length === 0 ? (
-                      <EmptyState
-                        title="No community posts yet"
-                        description="When the mosque posts updates to the community feed, they will show up here."
-                      />
-                    ) : (
-                      recentPosts.map((post) => (
-                        <Card key={post.id} className="rounded-3xl border-border/50">
-                          <CardContent className="space-y-4 p-5">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-foreground">
-                                  {post.author?.full_name || "Mosque community"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">{formatDate(post.created_at)}</p>
-                              </div>
-                              <Badge variant="outline" className="rounded-full capitalize">
-                                {post.category || post.post_type || "update"}
+              <TabsContent value="announcements" className="mt-6 space-y-4">
+                {announcements.length === 0 ? (
+                  <EmptyState
+                    title="No announcements posted"
+                    description="The latest notices and updates from the mosque will show here."
+                  />
+                ) : (
+                  announcements.map((announcement) => (
+                    <Card key={announcement.id}>
+                      <CardContent className="p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "rounded-full px-3 py-1 capitalize",
+                                  announcementPriorityTone[announcement.priority] ?? announcementPriorityTone.normal
+                                )}
+                              >
+                                {announcement.priority}
                               </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(announcement.published_at)}
+                              </span>
                             </div>
-                            <p className="text-sm leading-relaxed text-muted-foreground">{post.content}</p>
-                          </CardContent>
-                        </Card>
-                      ))
-                    )}
-                  </TabsContent>
+                            <h3 className="text-base font-semibold">{announcement.title}</h3>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{announcement.content}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </TabsContent>
 
-                  <TabsContent value="donations" className="space-y-6">
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <Card className="rounded-3xl border-border/50">
-                        <CardContent className="p-5 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
-                            Total Raised
-                          </p>
-                          <p className="mt-3 text-3xl font-black tracking-tight text-primary">
-                            {formatCurrency(totalRaised)}
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card className="rounded-3xl border-border/50">
-                        <CardContent className="p-5 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
-                            Donations
-                          </p>
-                          <p className="mt-3 text-3xl font-black tracking-tight">
-                            {donations.length}
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card className="rounded-3xl border-border/50">
-                        <CardContent className="p-5 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">
-                            Latest Gift
-                          </p>
-                          <p className="mt-3 text-3xl font-black tracking-tight">
-                            {donations[0] ? formatCurrency(donations[0].amount) : formatCurrency(0)}
-                          </p>
-                        </CardContent>
-                      </Card>
-                    </div>
+              <TabsContent value="donations" className="mt-6 space-y-6">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Total Raised
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight text-primary">
+                        {formatCurrency(totalRaised)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Donations
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight">
+                        {donations.length}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-5 text-center">
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Latest Gift
+                      </p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight">
+                        {donations[0] ? formatCurrency(donations[0].amount) : formatCurrency(0)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
 
-                    {donations.length === 0 ? (
-                      <EmptyState
-                        title="No completed donations yet"
-                        description="Donation activity will appear here once it is recorded by the mosque."
-                      />
-                    ) : (
-                      donations.map((donation) => (
-                        <Card key={donation.id} className="rounded-3xl border-border/50">
-                          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="font-semibold text-foreground capitalize">
-                                {formatLabel(donation.donation_type || "general")}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatDate(donation.created_at)}{donation.is_anonymous ? " • Anonymous donor" : ""}
-                              </p>
-                            </div>
-                            <Badge className="w-fit rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">
-                              {formatCurrency(donation.amount)}
-                            </Badge>
-                          </CardContent>
-                        </Card>
-                      ))
-                    )}
-                  </TabsContent>
-                </Tabs>
+                {donations.length === 0 ? (
+                  <EmptyState
+                    title="No completed donations yet"
+                    description="Donation activity will appear here once it is recorded by the mosque."
+                  />
+                ) : (
+                  donations.map((donation) => (
+                    <Card key={donation.id}>
+                      <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-foreground capitalize">
+                            {formatLabel(donation.donation_type || "general")}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatDate(donation.created_at)}{donation.is_anonymous ? " • Anonymous donor" : ""}
+                          </p>
+                        </div>
+                        <Badge className="w-fit rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">
+                          {formatCurrency(donation.amount)}
+                        </Badge>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </TabsContent>
 
               <TabsContent value="library" className="mt-6">
@@ -634,11 +612,11 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-[2rem] border-border/50 shadow-sm lg:sticky lg:top-[88px]">
-              <CardHeader className="border-b border-border/40 bg-gradient-to-br from-primary to-primary/90 text-primary-foreground">
-                <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight">
-                  <Clock className="h-5 w-5" />
-                  Quick Prayer View
+            <Card className="lg:sticky lg:top-[100px]">
+              <CardHeader className="border-b border-border/50">
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-primary" />
+                  Today's Prayer Times
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 p-4">
@@ -662,9 +640,9 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
               </CardContent>
             </Card>
 
-            <Card className="rounded-3xl border-border/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-black">
+            <Card>
+              <CardHeader className="border-b border-border/50">
+                <CardTitle className="flex items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-primary" />
                   Contact & Access
                 </CardTitle>
@@ -697,83 +675,10 @@ export function MosqueDetail({ data }: MosqueDetailProps) {
                 />
               </CardContent>
             </Card>
-
-            <Card className="rounded-3xl border-border/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-black">
-                  <Bell className="h-5 w-5 text-primary" />
-                  Live With Management Panels
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  Events, announcements, imam assignments, and mosque profile updates shown here are pulled
-                  from the same live records managed in the Admin, Shura, and Imam panels.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <MiniMetric label="Announcements" value={announcements.length} />
-                  <MiniMetric label="Upcoming Events" value={events.length} />
-                  <MiniMetric label="Active Teams" value={managementTeams.filter((team) => team.is_active).length} />
-                  <MiniMetric label="Recent Posts" value={recentPosts.length} />
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function PrimaryTab({ value, label }: { value: string; label: string }) {
-  return (
-    <TabsTrigger
-      value={value}
-      className="rounded-xl px-4 py-2.5 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm"
-    >
-      {label}
-    </TabsTrigger>
-  );
-}
-
-function SubTabList({ children }: { children: ReactNode }) {
-  return (
-    <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-2xl bg-muted/40 p-1.5">
-      {children}
-    </TabsList>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "primary" | "sky" | "emerald" | "amber";
-}) {
-  const toneClass =
-    tone === "sky"
-      ? "bg-sky-500/10 text-sky-600"
-      : tone === "emerald"
-        ? "bg-emerald-500/10 text-emerald-600"
-        : tone === "amber"
-          ? "bg-amber-500/10 text-amber-600"
-          : "bg-primary/10 text-primary";
-
-  return (
-    <Card className="rounded-3xl border-border/50">
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-          <p className="mt-2 text-3xl font-black tracking-tight">{value}</p>
-        </div>
-        <div className={cn("rounded-2xl p-3", toneClass)}>
-          <Users className="h-5 w-5" />
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -803,14 +708,14 @@ function PrayerTimeCard({
 
 function ManagementTeamCard({ team, mosqueId }: { team: PublicManagementTeam; mosqueId: string }) {
   return (
-    <Card className="rounded-3xl border-border/50">
+    <Card>
       <CardContent className="space-y-4 p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/70">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {formatLabel(team.team_type || "operations")}
             </p>
-            <h3 className="mt-2 text-xl font-black tracking-tight">{team.name}</h3>
+            <h3 className="mt-2 text-lg font-semibold">{team.name}</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {team.description || "This team helps manage mosque operations and community delivery."}
             </p>
@@ -822,24 +727,24 @@ function ManagementTeamCard({ team, mosqueId }: { team: PublicManagementTeam; mo
           ) : null}
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/70">Team Lead</p>
-          <p className="mt-2 font-semibold text-foreground">{team.lead?.full_name || "Lead will be assigned soon"}</p>
+        <div className="border-t border-border/50 pt-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Team Lead</p>
+          <p className="mt-2 font-medium text-foreground">{team.lead?.full_name || "Lead will be assigned soon"}</p>
         </div>
 
-        <div>
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/70">
+        <div className="border-t border-border/50 pt-4">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Members
           </p>
           {team.members.length > 0 ? (
             <div className="space-y-2">
               {team.members.slice(0, 4).map((member) => (
-                <div key={member.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border/40 px-4 py-3">
+                <div key={member.id} className="flex items-center justify-between gap-3 border-b border-border/40 py-3 last:border-0">
                   <div>
                     <p className="font-medium text-foreground">{member.member_name}</p>
                     <p className="text-xs text-muted-foreground">{member.role_title}</p>
                   </div>
-                  <Button variant="ghost" size="sm" asChild className="rounded-xl">
+                  <Button variant="ghost" size="sm" asChild>
                     <Link href={`/mosques/${mosqueId}/management/${member.id}`}>View</Link>
                   </Button>
                 </div>
@@ -868,13 +773,11 @@ function ContactAction({
   external?: boolean;
 }) {
   const content = (
-    <div className="flex items-center gap-4 rounded-2xl border border-transparent p-4 transition-colors hover:border-border/40 hover:bg-muted/40">
-      <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-        <Icon className="h-4 w-4" />
-      </div>
+    <div className="flex items-center gap-3 border-b border-border/50 py-3 last:border-0">
+      <Icon className="h-5 w-5 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-        <p className="mt-1 truncate font-medium text-foreground">{value}</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="mt-0.5 truncate font-medium text-foreground">{value}</p>
       </div>
       {href ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
     </div>
@@ -893,18 +796,9 @@ function ContactAction({
 
 function QuickPrayerRow({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex items-center justify-between rounded-xl bg-muted/20 px-3 py-2">
+    <div className="flex items-center justify-between border-b border-border/50 py-2 last:border-0">
       <span className="font-medium text-foreground">{label}</span>
-      <span className="font-black tracking-tight text-primary">{value || "TBD"}</span>
-    </div>
-  );
-}
-
-function MiniMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-border/40 bg-muted/20 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
-      <p className="mt-2 text-xl font-black tracking-tight text-foreground">{value}</p>
+      <span className="font-semibold text-primary">{value || "TBD"}</span>
     </div>
   );
 }
@@ -921,20 +815,20 @@ function InfoRow({
   external?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">{label}</p>
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
       {href && value ? (
         <a
           href={href}
           target={external ? "_blank" : undefined}
           rel={external ? "noreferrer" : undefined}
-          className="mt-2 inline-flex items-center gap-2 font-medium text-primary hover:underline"
+          className="mt-1 inline-flex items-center gap-2 font-medium text-primary hover:underline"
         >
           {value}
           {external ? <ExternalLink className="h-4 w-4" /> : null}
         </a>
       ) : (
-        <p className="mt-2 font-medium text-foreground">{value || "Not available"}</p>
+        <p className="mt-1 font-medium text-foreground">{value || "Not available"}</p>
       )}
     </div>
   );
@@ -942,11 +836,11 @@ function InfoRow({
 
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
-    <Card className="rounded-3xl border-dashed border-border/60">
-      <CardContent className="py-14 text-center">
-        <Building2 className="mx-auto h-12 w-12 text-muted-foreground/40" />
-        <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+    <Card className="border-dashed">
+      <CardContent className="py-12 text-center">
+        <Building2 className="mx-auto h-10 w-10 text-muted-foreground/30" />
+        <h3 className="mt-3 font-semibold">{title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
   );
@@ -1082,7 +976,7 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                   Suggest Book
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+              <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Suggest a New Book</DialogTitle>
                   <DialogDescription>
@@ -1090,12 +984,13 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
+                <div className="space-y-4 py-4">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="suggest-book-title">Title</Label>
                       <Input
                         id="suggest-book-title"
+                        placeholder="Book title"
                         value={newBook.title}
                         onChange={(event) => setNewBook((current) => ({ ...current, title: event.target.value }))}
                       />
@@ -1104,6 +999,7 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                       <Label htmlFor="suggest-book-author">Author</Label>
                       <Input
                         id="suggest-book-author"
+                        placeholder="Author name"
                         value={newBook.author}
                         onChange={(event) => setNewBook((current) => ({ ...current, author: event.target.value }))}
                       />
@@ -1135,17 +1031,19 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                       <Label htmlFor="suggest-book-language">Language</Label>
                       <Input
                         id="suggest-book-language"
+                        placeholder="e.g., English, Arabic"
                         value={newBook.language}
                         onChange={(event) => setNewBook((current) => ({ ...current, language: event.target.value }))}
                       />
                     </div>
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="suggest-book-publisher">Publisher</Label>
                       <Input
                         id="suggest-book-publisher"
+                        placeholder="Publisher name"
                         value={newBook.publisher}
                         onChange={(event) => setNewBook((current) => ({ ...current, publisher: event.target.value }))}
                       />
@@ -1155,6 +1053,7 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                       <Input
                         id="suggest-book-year"
                         type="number"
+                        placeholder="YYYY"
                         value={newBook.publishYear}
                         onChange={(event) =>
                           setNewBook((current) => ({
@@ -1164,26 +1063,6 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                         }
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="suggest-book-location">Shelf Location</Label>
-                      <Input
-                        id="suggest-book-location"
-                        value={newBook.location}
-                        onChange={(event) => setNewBook((current) => ({ ...current, location: event.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="suggest-book-description">Description</Label>
-                    <Textarea
-                      id="suggest-book-description"
-                      rows={4}
-                      value={newBook.description}
-                      onChange={(event) =>
-                        setNewBook((current) => ({ ...current, description: event.target.value }))
-                      }
-                    />
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-3">
@@ -1193,6 +1072,7 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                         id="suggest-book-copies"
                         type="number"
                         min={1}
+                        placeholder="1"
                         value={newBook.totalCopies}
                         onChange={(event) =>
                           setNewBook((current) => ({
@@ -1223,13 +1103,36 @@ function MosqueLibrary({ mosqueId, mosqueName }: { mosqueId: string; mosqueName:
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="suggest-book-tags">Tags</Label>
+                      <Label htmlFor="suggest-book-location">Location</Label>
                       <Input
-                        id="suggest-book-tags"
-                        value={newBook.tags}
-                        onChange={(event) => setNewBook((current) => ({ ...current, tags: event.target.value }))}
+                        id="suggest-book-location"
+                        placeholder="Shelf location"
+                        value={newBook.location}
+                        onChange={(event) => setNewBook((current) => ({ ...current, location: event.target.value }))}
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="suggest-book-description">Description</Label>
+                    <Textarea
+                      id="suggest-book-description"
+                      placeholder="Add any additional notes about this book..."
+                      value={newBook.description}
+                      onChange={(event) =>
+                        setNewBook((current) => ({ ...current, description: event.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="suggest-book-tags">Tags</Label>
+                    <Input
+                      id="suggest-book-tags"
+                      placeholder="Separate with commas (e.g., Islamic, Education, Children)"
+                      value={newBook.tags}
+                      onChange={(event) => setNewBook((current) => ({ ...current, tags: event.target.value }))}
+                    />
                   </div>
                 </div>
 
